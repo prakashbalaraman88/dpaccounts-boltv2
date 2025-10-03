@@ -7,11 +7,10 @@ import { AuthPage } from '@/components/auth/AuthPage'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { Dashboard } from '@/components/dashboard/Dashboard'
-import { ChatInterface } from '@/components/chat/ChatInterface'
 import { ProjectsPage } from '@/components/projects/ProjectsPage'
 import { ProjectDetailsPage } from '@/components/projects/ProjectDetailsPage'
 import { SettingsPage } from '@/components/settings/SettingsPage'
-import { PersistentChat } from '@/components/chat/PersistentChat'
+import { FloatingAIButton } from '@/components/chat/FloatingAIButton'
 import { useAuthStore } from '@/stores'
 import { authService } from '@/lib/api'
 import { aiService } from '@/lib/ai'
@@ -84,15 +83,13 @@ const AppContent: React.FC = () => {
         <main className="flex-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/chat" element={<ChatInterface />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
-            <Route path="/transactions" element={<Dashboard />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>
-      <PersistentChat />
+      <FloatingAIButton />
     </div>
   )
 }

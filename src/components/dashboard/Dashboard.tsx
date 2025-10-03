@@ -1,19 +1,15 @@
-import { Plus, TrendingUp, TrendingDown, DollarSign, FolderOpen, CircleAlert as AlertCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, FolderOpen, CircleAlert as AlertCircle, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ProjectCard } from '@/components/ui/project-card'
-import { TransactionCard } from '@/components/ui/transaction-card'
-import { NewProjectModal } from '@/components/projects/NewProjectModal'
 import { useProjects } from '@/lib/api/hooks'
 import { useTransactions } from '@/lib/api/hooks'
-import { useProjectStore } from '@/stores'
 import { formatCurrency } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 
 export const Dashboard = () => {
   const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useProjects()
   const { data: transactions = [], isLoading: transactionsLoading } = useTransactions()
-  const { currentProject, setCurrentProject } = useProjectStore()
 
   const totalIncome = transactions
     .filter(t => t.type === 'income')
@@ -25,7 +21,9 @@ export const Dashboard = () => {
 
   const netAmount = totalIncome - totalExpenses
   const activeProjects = projects.filter(p => p.status === 'active')
-  const recentTransactions = transactions.slice(0, 5)
+  const recentTransactions = transactions
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 10)
 
   if (projectsError) {
     return (
@@ -48,26 +46,18 @@ export const Dashboard = () => {
   const isLoading = projectsLoading || transactionsLoading
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 md:space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text">
-            Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Welcome back! Here's your project overview.
-          </p>
-        </div>
-        <NewProjectModal>
-          <Button size="lg" className="w-full sm:w-auto shadow-lg hover:shadow-xl transition-all">
-            <Plus className="mr-2 h-5 w-5" />
-            New Project
-          </Button>
-        </NewProjectModal>
+    <div className="p-4 md:p-6 lg:p-8 space-y-6 pb-24">
+      <div>
+        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+          Dashboard
+        </h1>
+        <p className="text-muted-foreground mt-2">
+          Overview of all your projects and transactions
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Total Income
@@ -92,7 +82,7 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Total Expenses
@@ -117,7 +107,7 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Net Amount
@@ -131,11 +121,7 @@ export const Dashboard = () => {
               <div className="h-8 w-32 bg-muted animate-pulse rounded" />
             ) : (
               <>
-                <div className={`text-2xl md:text-3xl font-bold ${
-                  netAmount >= 0
-                    ? 'text-success-600 dark:text-success-500'
-                    : 'text-error-600 dark:text-error-500'
-                }`}>
+                <div className={`text-2xl md:text-3xl font-bold ${netAmount >= 0 ? 'text-success-600 dark:text-success-500' : 'text-error-600 dark:text-error-500'}`}>
                   {formatCurrency(netAmount)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -146,21 +132,21 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Active Projects
             </CardTitle>
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <FolderOpen className="h-5 w-5 text-primary" />
+            <div className="w-10 h-10 rounded-full bg-warning-500/10 flex items-center justify-center">
+              <FolderOpen className="h-5 w-5 text-warning-600 dark:text-warning-500" />
             </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="h-8 w-16 bg-muted animate-pulse rounded" />
+              <div className="h-8 w-32 bg-muted animate-pulse rounded" />
             ) : (
               <>
-                <div className="text-2xl md:text-3xl font-bold">
+                <div className="text-2xl md:text-3xl font-bold text-warning-600 dark:text-warning-500">
                   {activeProjects.length}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -173,131 +159,149 @@ export const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              Current Project
-            </CardTitle>
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Recent Transactions</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Latest {recentTransactions.length} transactions across all projects
+              </p>
+            </div>
+            <Link to="/projects">
+              <Button variant="outline" size="sm">View All</Button>
+            </Link>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="space-y-3">
-                <div className="h-24 bg-muted animate-pulse rounded-lg" />
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-16 bg-muted animate-pulse rounded" />
+                ))}
               </div>
-            ) : currentProject ? (
-              <ProjectCard
-                project={currentProject as any}
-                onSelect={setCurrentProject as any}
-                isSelected={true}
-              />
+            ) : recentTransactions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No transactions yet</p>
+                <p className="text-xs mt-1">Start by creating a project and adding transactions</p>
+              </div>
             ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
-                  <FolderOpen className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <p className="text-muted-foreground mb-4">No project selected</p>
-                <Link to="/projects">
-                  <Button variant="outline">Browse Projects</Button>
-                </Link>
+              <div className="space-y-3">
+                {recentTransactions.map((transaction) => {
+                  const project = projects.find(p => p.id === transaction.project_id)
+                  return (
+                    <div
+                      key={transaction.id}
+                      className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm truncate">
+                            {transaction.description || 'Transaction'}
+                          </p>
+                          <Badge variant={transaction.type === 'income' ? 'default' : 'secondary'} className="text-xs">
+                            {transaction.category}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-xs text-muted-foreground truncate">
+                            {project?.name || 'Unknown Project'}
+                          </p>
+                          {transaction.vendor_name && (
+                            <>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {transaction.vendor_name}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right ml-4">
+                        <p className={`font-semibold ${transaction.type === 'income' ? 'text-success-600 dark:text-success-500' : 'text-error-600 dark:text-error-500'}`}>
+                          {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(transaction.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                Recent Transactions
-              </span>
-              {recentTransactions.length > 0 && (
-                <Link to="/transactions">
-                  <Button variant="ghost" size="sm">View All</Button>
-                </Link>
-              )}
-            </CardTitle>
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Active Projects</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {activeProjects.length} project{activeProjects.length !== 1 ? 's' : ''} in progress
+              </p>
+            </div>
+            <Link to="/projects">
+              <Button variant="outline" size="sm">View All</Button>
+            </Link>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-20 bg-muted animate-pulse rounded" />
                 ))}
               </div>
-            ) : recentTransactions.length > 0 ? (
-              <div className="space-y-3">
-                {recentTransactions.map((transaction) => (
-                  <TransactionCard
-                    key={transaction.id}
-                    transaction={transaction}
-                  />
-                ))}
+            ) : activeProjects.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No active projects</p>
+                <p className="text-xs mt-1">Create your first project to get started</p>
               </div>
             ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
-                  <DollarSign className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <p className="text-muted-foreground mb-4">No transactions yet</p>
-                <Link to="/chat">
-                  <Button>Add Transaction</Button>
-                </Link>
+              <div className="space-y-3">
+                {activeProjects.slice(0, 5).map((project) => {
+                  const projectTransactions = transactions.filter(t => t.project_id === project.id)
+                  const projectIncome = projectTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
+                  const projectExpenses = projectTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
+                  const projectBalance = projectIncome - projectExpenses
+
+                  return (
+                    <Link
+                      key={project.id}
+                      to={`/projects/${project.id}`}
+                      className="block p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate">{project.name}</p>
+                          {project.client_email && (
+                            <p className="text-xs text-muted-foreground mt-1 truncate">
+                              {project.client_email}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2">
+                            <div className="text-xs">
+                              <span className="text-muted-foreground">Budget: </span>
+                              <span className="font-medium">{formatCurrency(project.budget || 0)}</span>
+                            </div>
+                            <div className="text-xs">
+                              <span className="text-muted-foreground">Spent: </span>
+                              <span className="font-medium">{formatCurrency((project.spent || projectExpenses) || 0)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Badge variant={projectBalance >= 0 ? 'default' : 'destructive'} className="ml-2">
+                          {formatCurrency(projectBalance)}
+                        </Badge>
+                      </div>
+                    </Link>
+                  )
+                })}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-
-      <Card className="backdrop-blur-sm bg-card/50 border-border/50 shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Active Projects</span>
-            {activeProjects.length > 0 && (
-              <Link to="/projects">
-                <Button variant="ghost" size="sm">View All</Button>
-              </Link>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-40 bg-muted animate-pulse rounded-lg" />
-              ))}
-            </div>
-          ) : activeProjects.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {activeProjects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project as any}
-                  onSelect={setCurrentProject as any}
-                  isSelected={currentProject?.id === project.id}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
-                <FolderOpen className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground mb-2 text-lg font-medium">No active projects</p>
-              <p className="text-sm text-muted-foreground mb-6">
-                Get started by creating your first project
-              </p>
-              <NewProjectModal>
-                <Button size="lg" className="shadow-lg">
-                  <Plus className="mr-2 h-5 w-5" />
-                  Create Your First Project
-                </Button>
-              </NewProjectModal>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }
