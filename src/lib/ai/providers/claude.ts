@@ -88,10 +88,13 @@ export class ClaudeProvider extends BaseAIProvider {
 
       const analysis = JSON.parse(jsonMatch[0])
 
+      const transactionType = analysis.type || 'expense'
+      const defaultCategory = transactionType === 'income' ? 'Current Account' : 'Others'
+
       const normalizedAnalysis: TransactionAnalysis = {
         amount: analysis.amount || 0,
-        type: analysis.type || 'expense',
-        category: analysis.category || 'Other Expense',
+        type: transactionType,
+        category: analysis.category || defaultCategory,
         subcategory: analysis.subcategory,
         description: analysis.description || 'Transaction',
         vendorName: analysis.vendorName,
