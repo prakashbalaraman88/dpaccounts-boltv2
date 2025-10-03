@@ -15,7 +15,11 @@ export const FloatingAIButton = () => {
   const location = useLocation()
   const { data: projects = [] } = useProjects()
 
-  const isProjectDetailsPage = location.pathname.includes('/projects/') && projectId
+  const pathMatch = location.pathname.match(/\/projects\/([^\/]+)/)
+  const projectIdFromPath = pathMatch ? pathMatch[1] : null
+  const effectiveProjectId = projectId || projectIdFromPath
+
+  const isProjectDetailsPage = location.pathname.includes('/projects/') && effectiveProjectId
 
   console.log('FloatingAIButton render:', {
     isProjectDetailsPage,
@@ -23,18 +27,20 @@ export const FloatingAIButton = () => {
     isMinimized,
     currentProject: currentProject?.name,
     projectId,
+    projectIdFromPath,
+    effectiveProjectId,
     pathname: location.pathname
   })
 
   useEffect(() => {
-    if (projectId && projects.length > 0) {
-      const project = projects.find(p => p.id === projectId)
+    if (effectiveProjectId && projects.length > 0) {
+      const project = projects.find(p => p.id === effectiveProjectId)
       if (project && project.id !== currentProject?.id) {
         console.log('Setting current project:', project.name)
         setCurrentProject(project)
       }
     }
-  }, [projectId, projects, currentProject, setCurrentProject])
+  }, [effectiveProjectId, projects, currentProject, setCurrentProject])
 
   useEffect(() => {
     if (!currentProject && !location.pathname.includes('/projects/')) {
