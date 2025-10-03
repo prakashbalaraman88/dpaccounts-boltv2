@@ -59,7 +59,9 @@ export const ChatInterface: React.FC = () => {
     setIsProcessing(true)
 
     try {
-      const analysis = await aiService.analyzeTransaction(imageDataUrl)
+      const analysis = imageFile
+        ? await aiService.analyzeTransaction(imageDataUrl)
+        : await aiService.analyzeTextTransaction(content)
       
       setIsTyping(true)
       
