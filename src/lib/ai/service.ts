@@ -117,18 +117,20 @@ Extract:
 - amount: numeric value (convert words like "lakh" to 100000, "thousand" to 1000, "crore" to 10000000)
 - type: "income" or "expense"
 - category: MUST be one of these predefined categories:
-  Income: "Client Payment", "Freelance Income", "Salary", "Refund", "Other Income"
-  Expense: "Materials", "Equipment", "Software", "Marketing", "Travel", "Office Supplies", "Utilities", "Professional Services", "Other Expense"
+  Income: "Current Account", "Savings Account", "Cash", "Cheque", "Others"
+  Expense: "Measurements", "Designer/Architect", "Construction Material", "Factory Materials", "Onsite Materials", "Jobwork", "Carpenter", "Electrician", "False Ceiling", "Operational", "Others"
 - description: brief description
 - vendorName: vendor/client name if mentioned
 - confidence: 0-1 score
 
 Examples:
-"Received 1 lakh" → {"amount": 100000, "type": "income", "category": "Client Payment", "description": "Payment received", "confidence": 0.9}
-"Paid 50000 for cement" → {"amount": 50000, "type": "expense", "category": "Materials", "description": "Cement purchase", "confidence": 0.9}
-"Spent 2.5 lakh on labor" → {"amount": 250000, "type": "expense", "category": "Professional Services", "description": "Labor payment", "confidence": 0.9}
-"Got freelance payment" → {"amount": 0, "type": "income", "category": "Freelance Income", "description": "Freelance payment received", "confidence": 0.7}
-"Bought laptop for 80000" → {"amount": 80000, "type": "expense", "category": "Equipment", "description": "Laptop purchase", "confidence": 0.9}
+"Received 1 lakh" → {"amount": 100000, "type": "income", "category": "Current Account", "description": "Payment received", "confidence": 0.9}
+"Paid 50000 for cement" → {"amount": 50000, "type": "expense", "category": "Construction Material", "description": "Cement purchase", "confidence": 0.9}
+"Spent 2.5 lakh on carpenter" → {"amount": 250000, "type": "expense", "category": "Carpenter", "description": "Carpentry work payment", "confidence": 0.9}
+"Got cash payment 75000" → {"amount": 75000, "type": "income", "category": "Cash", "description": "Cash payment received", "confidence": 0.9}
+"Paid electrician 40000" → {"amount": 40000, "type": "expense", "category": "Electrician", "description": "Electrical work payment", "confidence": 0.9}
+"Designer fee 1 lakh" → {"amount": 100000, "type": "expense", "category": "Designer/Architect", "description": "Designer fee payment", "confidence": 0.9}
+"Received cheque 2 lakh" → {"amount": 200000, "type": "income", "category": "Cheque", "description": "Cheque payment received", "confidence": 0.9}
 
 IMPORTANT: Use ONLY the predefined categories listed above. Do not create new categories.
 
