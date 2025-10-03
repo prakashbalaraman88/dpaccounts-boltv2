@@ -108,27 +108,43 @@ export const PersistentChat: React.FC = () => {
           setIsProcessing(false)
         }, 2000)
       } else {
-        const response = await aiService.chat(content)
+        const analysis = await aiService.analyzeTextTransaction(content)
 
         setIsTyping(true)
         setTimeout(() => {
+          const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.category ? `I've categorized this as "${analysis.category}".` : ''} ${analysis.confidence < 0.7 ? 'Let me ask a few questions to get more details.' : 'The details look good!'}`
+
           const aiMessage = {
             id: (Date.now() + 1).toString(),
             project_id: currentProject.id,
-            content: response,
+            content: aiContent,
             role: 'assistant' as const,
-            message_type: 'text' as const,
+            message_type: 'transaction' as const,
             image_url: null,
             transaction_id: null,
-            ai_analysis: null,
+            ai_analysis: analysis,
             created_at: new Date().toISOString(),
             user_id: user?.id || 'demo-user'
           }
 
           addMessage(aiMessage)
+
+          if (analysis.amount && analysis.type) {
+            setPendingTransaction({
+              project_id: currentProject.id,
+              amount: analysis.amount,
+              type: analysis.type,
+              category: analysis.category || (analysis.type === 'income' ? 'Current Account' : 'Construction Material'),
+              subcategory: analysis.subcategory,
+              description: analysis.description,
+              vendor_name: analysis.vendorName,
+              transaction_date: new Date().toISOString().split('T')[0],
+            })
+          }
+
           setIsTyping(false)
           setIsProcessing(false)
-        }, 1000)
+        }, 1500)
       }
     } catch (error) {
       console.error('Error processing message:', error)

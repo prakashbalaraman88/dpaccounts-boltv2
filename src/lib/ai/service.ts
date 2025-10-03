@@ -102,6 +102,68 @@ class AIService {
     throw lastError || new Error('All AI providers failed')
   }
 
+  async analyzeTextTransaction(message: string): Promise<TransactionAnalysis> {
+    const providers = await this.getAvailableProviders()
+
+    if (providers.length === 0) {
+      throw new Error('No AI providers configured. Please add your API keys in Settings.')
+    }
+
+    const prompt = `Analyze this transaction message and extract details in JSON format.
+
+Message: "${message}"
+
+Extract:
+- amount: numeric value (convert words like "lakh" to 100000, "thousand" to 1000, "crore" to 10000000)
+- type: "income" or "expense"
+- category: appropriate category (e.g., "Payment Received", "Material Purchase", "Labor Cost")
+- description: brief description
+- vendorName: vendor/client name if mentioned
+- confidence: 0-1 score
+
+Examples:
+"Received 1 lakh" → {"amount": 100000, "type": "income", "category": "Payment Received", "description": "Payment received", "confidence": 0.9}
+"Paid 50000 for cement" → {"amount": 50000, "type": "expense", "category": "Construction Material", "description": "Cement purchase", "confidence": 0.9}
+"Spent 2.5 lakh on labor" → {"amount": 250000, "type": "expense", "category": "Labor Cost", "description": "Labor payment", "confidence": 0.9}
+
+Respond with ONLY the JSON object, no other text.`
+
+    let lastError: Error | null = null
+
+    for (const { provider, priority } of providers) {
+      try {
+        console.log(`[AI Service] Attempting text transaction analysis with ${provider.name} (priority: ${priority})`)
+        const result = await provider.chat(prompt)
+        console.log(`[AI Service] Text analysis successful with ${provider.name}:`, result)
+
+        const jsonMatch = result.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0])
+          return {
+            amount: parsed.amount || 0,
+            type: parsed.type || null,
+            category: parsed.category || null,
+            subcategory: parsed.subcategory || null,
+            description: parsed.description || message,
+            vendorName: parsed.vendorName || null,
+            confidence: parsed.confidence || 0.7
+          }
+        }
+
+        throw new Error('Could not parse transaction data')
+      } catch (error) {
+        console.error(`[AI Service] ${provider.name} failed:`, error)
+        lastError = error as Error
+
+        if (providers.length > 1) {
+          console.log(`[AI Service] Falling back to next provider...`)
+        }
+      }
+    }
+
+    throw lastError || new Error('All AI providers failed')
+  }
+
   async chat(message: string, context?: string): Promise<string> {
     const providers = await this.getAvailableProviders()
 
