@@ -31,14 +31,24 @@ export const ChatInterface: React.FC = () => {
 
   const handleSendMessage = async (content: string, imageFile?: File) => {
     if (!currentProject) return
-    // Add user message
+
+    let imageDataUrl = ''
+    if (imageFile) {
+      imageDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(imageFile)
+      })
+    }
+
     const userMessage = {
       id: Date.now().toString(),
       project_id: currentProject.id,
       content,
       role: 'user' as const,
       message_type: imageFile ? 'image' as const : 'text' as const,
-      image_url: imageFile ? URL.createObjectURL(imageFile) : null,
+      image_url: imageDataUrl || null,
       transaction_id: null,
       ai_analysis: null,
       created_at: new Date().toISOString(),
@@ -49,9 +59,7 @@ export const ChatInterface: React.FC = () => {
     setIsProcessing(true)
 
     try {
-      // Analyze transaction with AI
-      const imageData = imageFile ? URL.createObjectURL(imageFile) : ''
-      const analysis = await aiService.analyzeTransaction(imageData)
+      const analysis = await aiService.analyzeTransaction(imageDataUrl)
       
       setIsTyping(true)
       
