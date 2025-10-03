@@ -1,0 +1,129 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 0 0% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 15%;
+    --primary: 45 69% 52%;
+    --primary-foreground: 0 0% 15%;
+    --secondary: 120 6% 39%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 45 69% 52%;
+    --accent-foreground: 0 0% 15%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 45 69% 52%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 0 0% 23%;
+    --foreground: 0 0% 90%;
+    --card: 0 0% 26%;
+    --card-foreground: 0 0% 90%;
+    --popover: 0 0% 26%;
+    --popover-foreground: 0 0% 90%;
+    --primary: 45 69% 52%;
+    --primary-foreground: 0 0% 15%;
+    --secondary: 120 6% 39%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 0 0% 30%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 45 69% 52%;
+    --accent-foreground: 0 0% 15%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 90%;
+    --border: 0 0% 32%;
+    --input: 0 0% 32%;
+    --ring: 45 69% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .chat-message {
+    @apply animate-fade-in;
+  }
+  
+  .typing-indicator {
+    @apply animate-pulse;
+  }
+  
+  .receipt-upload-area {
+    @apply border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors;
+  }
+  
+  .transaction-card {
+    @apply bg-card border border-border rounded-lg p-4 hover:shadow-md transition-all duration-200;
+  }
+  
+  .project-card {
+    @apply bg-gradient-to-br from-sage-50 to-warm-50 dark:from-sage-900 dark:to-warm-900 border border-border rounded-xl p-6 hover:shadow-lg transition-all duration-300;
+  }
+  
+  /* Mobile optimizations */
+  @media (max-width: 768px) {
+    .container {
+      @apply px-4;
+    }
+    
+    .card {
+      @apply mx-2;
+    }
+    
+    .grid {
+      @apply gap-4;
+    }
+    
+    .text-3xl {
+      @apply text-2xl;
+    }
+    
+    .text-2xl {
+      @apply text-xl;
+    }
+    
+    .p-6 {
+      @apply p-4;
+    }
+    
+    .space-y-6 > * + * {
+      @apply mt-4;
+    }
+  }
+  
+  /* Touch targets for mobile */
+  @media (max-width: 768px) {
+    .btn-mobile {
+      @apply min-h-[44px] min-w-[44px];
+    }
+    
+    .input-mobile {
+      @apply min-h-[44px];
+    }
+    
+    /* Ensure persistent chat doesn't interfere with mobile navigation */
+    .persistent-chat {
+      @apply bottom-0 right-0 left-0;
+    }
+  }
+}
