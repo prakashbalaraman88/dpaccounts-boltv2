@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Settings, BarChart3, Receipt, CircleAlert as AlertCircle } from 'lucide-react'
+import { ArrowLeft, Settings, ChartBar as BarChart3, Receipt, CircleAlert as AlertCircle } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
