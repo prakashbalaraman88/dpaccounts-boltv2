@@ -40,35 +40,46 @@ export class ClaudeProvider extends BaseAIProvider {
       const base64Data = imageData.split(',')[1]
       const mimeType = imageData.match(/data:([^;]+);/)?.[1] || 'image/jpeg'
 
+      if (!base64Data) {
+        throw new Error('Invalid image data: no base64 data found')
+      }
+
+      console.log('[Claude] Image data length:', base64Data.length)
+      console.log('[Claude] MIME type:', mimeType)
+
+      const requestBody = {
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mimeType,
+                  data: base64Data,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }
+
+      console.log('[Claude] Request body:', JSON.stringify(requestBody, null, 2))
+
       const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20241022',
-          max_tokens: 1024,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: mimeType,
-                    data: base64Data,
-                  },
-                },
-                {
-                  type: 'text',
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
