@@ -35,11 +35,16 @@ export const SettingsPage: React.FC = () => {
   }, [user?.id])
 
   const loadSettings = async () => {
-    if (!user?.id) return
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
+      console.log('[Settings] Loading API settings for user:', user.id)
       const data = await aiService.getAPISettings(user.id)
+      console.log('[Settings] Loaded settings:', data)
 
       data.forEach(setting => {
         if (setting.provider === 'gemini') {
@@ -55,8 +60,8 @@ export const SettingsPage: React.FC = () => {
 
       setSettings(data)
     } catch (error) {
-      console.error('Failed to load settings:', error)
-      showMessage('error', 'Failed to load settings')
+      console.error('[Settings] Failed to load settings:', error)
+      setSettings([])
     } finally {
       setLoading(false)
     }

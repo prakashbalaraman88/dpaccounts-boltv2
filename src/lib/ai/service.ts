@@ -153,18 +153,26 @@ class AIService {
   }
 
   async getAPISettings(userId: string): Promise<APISettings[]> {
-    const { data, error } = await supabase
-      .from('api_settings')
-      .select('*')
-      .eq('user_id', userId)
-      .order('priority', { ascending: true })
+    console.log('[AI Service] Fetching API settings for user:', userId)
 
-    if (error) {
-      console.error('[AI Service] Failed to load API settings:', error)
-      throw error
+    try {
+      const { data, error } = await supabase
+        .from('api_settings')
+        .select('*')
+        .eq('user_id', userId)
+        .order('priority', { ascending: true })
+
+      if (error) {
+        console.error('[AI Service] Failed to load API settings:', error)
+        return []
+      }
+
+      console.log('[AI Service] Loaded API settings:', data)
+      return (data as APISettings[]) || []
+    } catch (error) {
+      console.error('[AI Service] Exception loading API settings:', error)
+      return []
     }
-
-    return data as APISettings[]
   }
 
   async deleteAPISettings(id: string): Promise<void> {
