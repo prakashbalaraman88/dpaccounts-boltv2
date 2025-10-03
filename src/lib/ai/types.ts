@@ -1,8 +1,6 @@
 export interface TransactionAnalysis {
   amount: number
   type: 'income' | 'expense'
-  category: string
-  subcategory?: string
   description: string
   vendorName?: string
   transactionDate?: string

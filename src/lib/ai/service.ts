@@ -150,8 +150,6 @@ Respond with ONLY the JSON object, no other text.`
           return {
             amount: parsed.amount || 0,
             type: parsed.type || null,
-            category: parsed.category || null,
-            subcategory: parsed.subcategory || null,
             description: parsed.description || message,
             vendorName: parsed.vendorName || null,
             confidence: parsed.confidence || 0.7

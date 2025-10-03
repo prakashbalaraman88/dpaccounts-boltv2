@@ -48,7 +48,7 @@ export const PersistentChat: React.FC = () => {
   }, [messages, isTyping, isOpen])
 
   const handleSendMessage = async (content: string, imageFile?: File) => {
-    if (!currentProject) return
+    if (!currentProject || !user) return
 
     const userMessage = {
       id: Date.now().toString(),
@@ -60,7 +60,7 @@ export const PersistentChat: React.FC = () => {
       transaction_id: null,
       ai_analysis: null,
       created_at: new Date().toISOString(),
-      user_id: user?.id || 'demo-user'
+      user_id: user.id
     }
 
     addMessage(userMessage)
@@ -80,7 +80,7 @@ export const PersistentChat: React.FC = () => {
         setIsTyping(true)
 
         setTimeout(() => {
-          const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.category ? `I've categorized this as "${analysis.category}".` : ''} ${analysis.confidence < 0.7 ? 'Let me ask a few questions to get more details.' : 'The details look good!'}`
+          const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.confidence < 0.7 ? 'Please select a category and review the details.' : 'Please select a category and confirm the details.'}`
 
           const aiMessage = {
             id: (Date.now() + 1).toString(),
@@ -92,7 +92,7 @@ export const PersistentChat: React.FC = () => {
             transaction_id: null,
             ai_analysis: analysis,
             created_at: new Date().toISOString(),
-            user_id: user?.id || 'demo-user'
+            user_id: user.id
           }
 
           addMessage(aiMessage)
@@ -102,8 +102,7 @@ export const PersistentChat: React.FC = () => {
               project_id: currentProject.id,
               amount: analysis.amount,
               type: analysis.type,
-              category: analysis.category || (analysis.type === 'income' ? 'Current Account' : 'Construction Material'),
-              subcategory: analysis.subcategory,
+              category: analysis.type === 'income' ? 'Current Account' : 'Construction Material',
               description: analysis.description,
               vendor_name: analysis.vendorName,
               transaction_date: new Date().toISOString().split('T')[0],
@@ -118,7 +117,7 @@ export const PersistentChat: React.FC = () => {
 
         setIsTyping(true)
         setTimeout(() => {
-          const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.category ? `I've categorized this as "${analysis.category}".` : ''} ${analysis.confidence < 0.7 ? 'Let me ask a few questions to get more details.' : 'The details look good!'}`
+          const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.confidence < 0.7 ? 'Please select a category and review the details.' : 'Please select a category and confirm the details.'}`
 
           const aiMessage = {
             id: (Date.now() + 1).toString(),
@@ -130,7 +129,7 @@ export const PersistentChat: React.FC = () => {
             transaction_id: null,
             ai_analysis: analysis,
             created_at: new Date().toISOString(),
-            user_id: user?.id || 'demo-user'
+            user_id: user.id
           }
 
           addMessage(aiMessage)
@@ -140,8 +139,7 @@ export const PersistentChat: React.FC = () => {
               project_id: currentProject.id,
               amount: analysis.amount,
               type: analysis.type,
-              category: analysis.category || (analysis.type === 'income' ? 'Current Account' : 'Construction Material'),
-              subcategory: analysis.subcategory,
+              category: analysis.type === 'income' ? 'Current Account' : 'Construction Material',
               description: analysis.description,
               vendor_name: analysis.vendorName,
               transaction_date: new Date().toISOString().split('T')[0],
@@ -167,7 +165,7 @@ export const PersistentChat: React.FC = () => {
           transaction_id: null,
           ai_analysis: null,
           created_at: new Date().toISOString(),
-          user_id: user?.id || 'demo-user'
+          user_id: user.id
         }
 
         addMessage(errorMessage)
@@ -216,7 +214,7 @@ export const PersistentChat: React.FC = () => {
   }
 
   const handleConfirmTransaction = async () => {
-    if (!pendingTransaction || !currentProject) return
+    if (!pendingTransaction || !currentProject || !user) return
 
     const transaction = {
       id: Date.now().toString(),
@@ -228,7 +226,7 @@ export const PersistentChat: React.FC = () => {
       is_verified: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      user_id: user?.id || 'demo-user'
+      user_id: user.id
     } as Transaction
 
     addTransaction(transaction)
@@ -243,7 +241,7 @@ export const PersistentChat: React.FC = () => {
       transaction_id: transaction.id,
       ai_analysis: null,
       created_at: new Date().toISOString(),
-      user_id: user?.id || 'demo-user'
+      user_id: user.id
     }
 
     addMessage(confirmationMessage)

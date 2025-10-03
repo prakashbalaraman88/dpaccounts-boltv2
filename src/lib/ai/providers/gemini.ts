@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { BaseAIProvider } from './base'
 import type { TransactionAnalysis } from '../types'
-import { TRANSACTION_CATEGORIES } from '../types'
 
 export class GeminiProvider extends BaseAIProvider {
   name = 'gemini'
@@ -57,20 +56,21 @@ export class GeminiProvider extends BaseAIProvider {
     {
       "amount": number (total amount),
       "type": "income" or "expense",
-      "category": string (from provided categories),
-      "subcategory": string (optional),
-      "description": string (brief description),
-      "vendorName": string (merchant/vendor name),
+      "description": string (brief description of what this payment is for),
+      "vendorName": string (merchant/vendor name or recipient name),
       "transactionDate": string (date in YYYY-MM-DD format),
-      "paymentMethod": string (cash, credit card, debit card, etc.),
+      "paymentMethod": string (cash, credit card, debit card, UPI, etc.),
       "confidence": number (0-1, your confidence in this analysis)
     }
 
-    Available categories:
-    - For income: ${TRANSACTION_CATEGORIES.income.join(', ')}
-    - For expense: ${TRANSACTION_CATEGORIES.expense.join(', ')}
+    Please analyze the image and extract accurate information. Focus on:
+    - The total amount paid/received
+    - Whether this is income (money received) or expense (money paid)
+    - Who the vendor/recipient is
+    - What the payment is for
+    - Payment method if visible
 
-    Please analyze the image and provide accurate information. If you cannot determine a field with confidence, use reasonable defaults.`
+    If you cannot determine a field with confidence, omit it or use null.`
 
     try {
       const imagePart = {
@@ -93,14 +93,9 @@ export class GeminiProvider extends BaseAIProvider {
 
       const analysis = JSON.parse(jsonMatch[0])
 
-      const transactionType = analysis.type || 'expense'
-      const defaultCategory = transactionType === 'income' ? 'Current Account' : 'Others'
-
       const normalizedAnalysis: TransactionAnalysis = {
         amount: analysis.amount || 0,
-        type: transactionType,
-        category: analysis.category || defaultCategory,
-        subcategory: analysis.subcategory,
+        type: analysis.type || 'expense',
         description: analysis.description || 'Transaction',
         vendorName: analysis.vendorName,
         transactionDate: analysis.transactionDate,

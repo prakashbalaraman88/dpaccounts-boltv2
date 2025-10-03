@@ -57,7 +57,7 @@ export const ChatInterface: React.FC = () => {
       
       setTimeout(() => {
         const formatCurrency = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
-        const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.category ? `I've categorized this as "${analysis.category}".` : ''} ${analysis.confidence < 0.7 ? 'Let me ask a few questions to get more details.' : 'The details look good!'}`
+        const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.confidence < 0.7 ? 'Please select a category and review the details.' : 'Please select a category and confirm the details.'}`
 
         const aiMessage = {
           id: (Date.now() + 1).toString(),
@@ -73,14 +73,13 @@ export const ChatInterface: React.FC = () => {
         }
 
         addMessage(aiMessage)
-        
+
         if (analysis.amount && analysis.type) {
           setPendingTransaction({
             project_id: currentProject.id,
             amount: analysis.amount,
             type: analysis.type,
-            category: analysis.category || (analysis.type === 'income' ? 'Client Payments' : 'Materials & Supplies'),
-            subcategory: analysis.subcategory,
+            category: analysis.type === 'income' ? 'Current Account' : 'Construction Material',
             description: analysis.description,
             vendor_name: analysis.vendorName,
             transaction_date: new Date().toISOString().split('T')[0],
