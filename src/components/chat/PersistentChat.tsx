@@ -68,7 +68,13 @@ export const PersistentChat: React.FC = () => {
 
     try {
       if (imageFile) {
-        const imageData = URL.createObjectURL(imageFile)
+        const reader = new FileReader()
+        const imageData = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(imageFile)
+        })
+
         const analysis = await aiService.analyzeTransaction(imageData)
 
         setIsTyping(true)
