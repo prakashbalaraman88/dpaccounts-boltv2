@@ -156,11 +156,17 @@ class AIService {
     console.log('[AI Service] Fetching API settings for user:', userId)
 
     try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+
       const { data, error } = await supabase
         .from('api_settings')
         .select('*')
         .eq('user_id', userId)
         .order('priority', { ascending: true })
+        .abortSignal(controller.signal)
+
+      clearTimeout(timeout)
 
       if (error) {
         console.error('[AI Service] Failed to load API settings:', error)

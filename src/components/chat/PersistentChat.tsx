@@ -67,54 +67,78 @@ export const PersistentChat: React.FC = () => {
     setIsProcessing(true)
 
     try {
-      const imageData = imageFile ? URL.createObjectURL(imageFile) : ''
-      const analysis = await aiService.analyzeTransaction(imageData)
+      if (imageFile) {
+        const imageData = URL.createObjectURL(imageFile)
+        const analysis = await aiService.analyzeTransaction(imageData)
 
-      setIsTyping(true)
+        setIsTyping(true)
 
-      setTimeout(() => {
-        const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.category ? `I've categorized this as "${analysis.category}".` : ''} ${analysis.confidence < 0.7 ? 'Let me ask a few questions to get more details.' : 'The details look good!'}`
+        setTimeout(() => {
+          const aiContent = `I've analyzed your transaction. ${analysis.amount ? `I found an amount of ${formatCurrency(analysis.amount)}` : 'I couldn\'t detect a specific amount'}. ${analysis.type ? `This appears to be an ${analysis.type}.` : 'Could you clarify if this is income or expense?'} ${analysis.category ? `I've categorized this as "${analysis.category}".` : ''} ${analysis.confidence < 0.7 ? 'Let me ask a few questions to get more details.' : 'The details look good!'}`
 
-        const aiMessage = {
-          id: (Date.now() + 1).toString(),
-          project_id: currentProject.id,
-          content: aiContent,
-          role: 'assistant' as const,
-          message_type: 'transaction' as const,
-          image_url: null,
-          transaction_id: null,
-          ai_analysis: analysis,
-          created_at: new Date().toISOString(),
-          user_id: user?.id || 'demo-user'
-        }
-
-        addMessage(aiMessage)
-        
-        if (analysis.amount && analysis.type) {
-          setPendingTransaction({
+          const aiMessage = {
+            id: (Date.now() + 1).toString(),
             project_id: currentProject.id,
-            amount: analysis.amount,
-            type: analysis.type,
-            category: analysis.category || (analysis.type === 'income' ? 'Current Account' : 'Construction Material'),
-            subcategory: analysis.subcategory,
-            description: analysis.description,
-            vendor_name: analysis.vendorName,
-            transaction_date: new Date().toISOString().split('T')[0],
-          })
-        }
+            content: aiContent,
+            role: 'assistant' as const,
+            message_type: 'transaction' as const,
+            image_url: null,
+            transaction_id: null,
+            ai_analysis: analysis,
+            created_at: new Date().toISOString(),
+            user_id: user?.id || 'demo-user'
+          }
 
-        setIsTyping(false)
-        setIsProcessing(false)
-      }, 2000)
+          addMessage(aiMessage)
+
+          if (analysis.amount && analysis.type) {
+            setPendingTransaction({
+              project_id: currentProject.id,
+              amount: analysis.amount,
+              type: analysis.type,
+              category: analysis.category || (analysis.type === 'income' ? 'Current Account' : 'Construction Material'),
+              subcategory: analysis.subcategory,
+              description: analysis.description,
+              vendor_name: analysis.vendorName,
+              transaction_date: new Date().toISOString().split('T')[0],
+            })
+          }
+
+          setIsTyping(false)
+          setIsProcessing(false)
+        }, 2000)
+      } else {
+        const response = await aiService.chat(content)
+
+        setIsTyping(true)
+        setTimeout(() => {
+          const aiMessage = {
+            id: (Date.now() + 1).toString(),
+            project_id: currentProject.id,
+            content: response,
+            role: 'assistant' as const,
+            message_type: 'text' as const,
+            image_url: null,
+            transaction_id: null,
+            ai_analysis: null,
+            created_at: new Date().toISOString(),
+            user_id: user?.id || 'demo-user'
+          }
+
+          addMessage(aiMessage)
+          setIsTyping(false)
+          setIsProcessing(false)
+        }, 1000)
+      }
     } catch (error) {
       console.error('Error processing message:', error)
-      
+
       setIsTyping(true)
       setTimeout(() => {
         const errorMessage = {
           id: (Date.now() + 1).toString(),
           project_id: currentProject.id,
-          content: 'Sorry, I encountered an error analyzing your transaction. Please try again with a simpler message.',
+          content: error instanceof Error ? error.message : 'Sorry, I encountered an error. Please try again.',
           role: 'assistant' as const,
           message_type: 'text' as const,
           image_url: null,
@@ -123,7 +147,7 @@ export const PersistentChat: React.FC = () => {
           created_at: new Date().toISOString(),
           user_id: user?.id || 'demo-user'
         }
-        
+
         addMessage(errorMessage)
         setIsTyping(false)
         setIsProcessing(false)

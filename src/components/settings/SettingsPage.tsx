@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Key, Save, Trash2, CircleCheck as CheckCircle, Circle as XCircle, CircleAlert as AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,14 +27,12 @@ export const SettingsPage: React.FC = () => {
 
   const [providerStatus, setProviderStatus] = useState<{ provider: string; available: boolean }[]>([])
 
-  useEffect(() => {
-    if (user?.id) {
-      loadSettings()
-      updateProviderStatus()
-    }
-  }, [user?.id])
+  const updateProviderStatus = useCallback(() => {
+    const status = aiService.getProviderStatus()
+    setProviderStatus(status)
+  }, [])
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     if (!user?.id) {
       setLoading(false)
       return
@@ -65,12 +63,12 @@ export const SettingsPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user?.id])
 
-  const updateProviderStatus = () => {
-    const status = aiService.getProviderStatus()
-    setProviderStatus(status)
-  }
+  useEffect(() => {
+    loadSettings()
+    updateProviderStatus()
+  }, [loadSettings, updateProviderStatus])
 
   const maskApiKey = (key: string): string => {
     if (key.length <= 8) return key
