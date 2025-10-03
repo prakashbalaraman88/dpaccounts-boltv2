@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ChatInterface } from './ChatInterface'
 import { useProjectStore, useUIStore } from '@/stores'
+import { useAppStore } from '@/stores/useAppStore'
 import { useProjects } from '@/lib/api/hooks'
 
 export const FloatingAIButton = () => {
   const [isMinimized, setIsMinimized] = useState(false)
   const { isChatOpen, setIsChatOpen } = useUIStore()
   const { currentProject, setCurrentProject } = useProjectStore()
+  const { setCurrentProject: setAppCurrentProject } = useAppStore()
   const { projectId } = useParams<{ projectId: string }>()
   const location = useLocation()
   const { data: projects = [] } = useProjects()
@@ -36,11 +38,12 @@ export const FloatingAIButton = () => {
     if (effectiveProjectId && projects.length > 0) {
       const project = projects.find(p => p.id === effectiveProjectId)
       if (project && project.id !== currentProject?.id) {
-        console.log('Setting current project:', project.name)
+        console.log('Setting current project in both stores:', project.name)
         setCurrentProject(project)
+        setAppCurrentProject(project)
       }
     }
-  }, [effectiveProjectId, projects, currentProject, setCurrentProject])
+  }, [effectiveProjectId, projects, currentProject, setCurrentProject, setAppCurrentProject])
 
   useEffect(() => {
     if (!currentProject && !location.pathname.includes('/projects/')) {
