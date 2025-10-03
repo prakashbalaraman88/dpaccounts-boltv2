@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Settings, ChartBar as BarChart3, Receipt, CircleAlert as AlertCircle } from 'lucide-react'
+import { ArrowLeft, Settings, ChartBar as BarChart3, Receipt, CircleAlert as AlertCircle, Sparkles } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import { ProjectTransactionsTab } from './ProjectTransactionsTab'
 import { useProjects } from '@/lib/api/hooks'
 import { useTransactions } from '@/lib/api/hooks'
 import { formatCurrency } from '@/lib/utils'
+import { useUIStore } from '@/stores'
 
 type Tab = 'overview' | 'transactions'
 
@@ -16,6 +17,7 @@ export const ProjectDetailsPage = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const { setIsChatOpen } = useUIStore()
 
   const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useProjects()
   const { data: allTransactions = [], isLoading: transactionsLoading } = useTransactions()
@@ -134,10 +136,20 @@ export const ProjectDetailsPage = () => {
               </div>
             </div>
           </div>
-          <Button variant="outline" size="sm">
-            <Settings className="h-4 w-4 mr-2" />
-            Edit Project
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setIsChatOpen(true)}
+              size="sm"
+              className="shadow-md"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Add Transaction
+            </Button>
+            <Button variant="outline" size="sm">
+              <Settings className="h-4 w-4 mr-2" />
+              Edit Project
+            </Button>
+          </div>
         </div>
       </Card>
 

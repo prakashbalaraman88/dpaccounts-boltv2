@@ -4,12 +4,12 @@ import { MessageCircle, X, Minimize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { PersistentChat } from './PersistentChat'
-import { useProjectStore } from '@/stores'
+import { useProjectStore, useUIStore } from '@/stores'
 import { useProjects } from '@/lib/api/hooks'
 
 export const FloatingAIButton = () => {
-  const [isOpen, setIsOpen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
+  const { isChatOpen, setIsChatOpen } = useUIStore()
   const { currentProject, setCurrentProject } = useProjectStore()
   const { projectId } = useParams<{ projectId: string }>()
   const location = useLocation()
@@ -26,16 +26,16 @@ export const FloatingAIButton = () => {
 
   useEffect(() => {
     if (!currentProject && !location.pathname.includes('/projects/')) {
-      setIsOpen(false)
+      setIsChatOpen(false)
       setIsMinimized(false)
     }
-  }, [currentProject, location])
+  }, [currentProject, location, setIsChatOpen])
 
   const toggleChat = () => {
     if (isMinimized) {
       setIsMinimized(false)
     } else {
-      setIsOpen(!isOpen)
+      setIsChatOpen(!isChatOpen)
     }
   }
 
@@ -46,24 +46,26 @@ export const FloatingAIButton = () => {
 
   const closeChat = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setIsOpen(false)
+    setIsChatOpen(false)
     setIsMinimized(false)
   }
 
-  if (!currentProject) {
+  const isProjectDetailsPage = location.pathname.includes('/projects/') && projectId
+
+  if (!isProjectDetailsPage) {
     return null
   }
 
   return (
     <>
-      {isOpen && !isMinimized && (
+      {isChatOpen && !isMinimized && (
         <Card className="fixed bottom-24 right-6 w-full max-w-lg h-[600px] flex flex-col shadow-2xl border-2 z-50 md:bottom-6 md:right-6">
           <div className="flex items-center justify-between p-4 border-b bg-primary text-primary-foreground rounded-t-lg">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5" />
               <div>
                 <h3 className="font-semibold">AI Assistant</h3>
-                <p className="text-xs opacity-90">{currentProject.name}</p>
+                <p className="text-xs opacity-90">{currentProject?.name || 'Project'}</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -91,7 +93,7 @@ export const FloatingAIButton = () => {
         </Card>
       )}
 
-      {(!isOpen || isMinimized) && (
+      {(!isChatOpen || isMinimized) && (
         <Button
           onClick={toggleChat}
           size="lg"

@@ -9,6 +9,7 @@ interface UIState {
   mobileMenuOpen: boolean
   viewMode: ViewMode
   theme: Theme
+  isChatOpen: boolean
 
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
@@ -16,6 +17,8 @@ interface UIState {
   toggleMobileMenu: () => void
   setViewMode: (mode: ViewMode) => void
   setTheme: (theme: Theme) => void
+  setIsChatOpen: (open: boolean) => void
+  toggleChat: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -26,6 +29,7 @@ export const useUIStore = create<UIState>()(
         mobileMenuOpen: false,
         viewMode: 'grid',
         theme: 'dark',
+        isChatOpen: false,
 
         setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
@@ -37,7 +41,11 @@ export const useUIStore = create<UIState>()(
 
         setViewMode: (mode) => set({ viewMode: mode }),
 
-        setTheme: (theme) => set({ theme })
+        setTheme: (theme) => set({ theme }),
+
+        setIsChatOpen: (open) => set({ isChatOpen: open }),
+
+        toggleChat: () => set((state) => ({ isChatOpen: !state.isChatOpen }))
       }),
       {
         name: 'ui-storage',
