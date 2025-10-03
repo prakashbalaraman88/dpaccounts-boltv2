@@ -3,7 +3,7 @@ import { useParams, useLocation } from 'react-router-dom'
 import { MessageCircle, X, Minimize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { PersistentChat } from './PersistentChat'
+import { ChatInterface } from './ChatInterface'
 import { useProjectStore, useUIStore } from '@/stores'
 import { useProjects } from '@/lib/api/hooks'
 
@@ -52,6 +52,14 @@ export const FloatingAIButton = () => {
 
   const isProjectDetailsPage = location.pathname.includes('/projects/') && projectId
 
+  console.log('FloatingAIButton render:', {
+    isProjectDetailsPage,
+    isChatOpen,
+    isMinimized,
+    currentProject: currentProject?.name,
+    projectId
+  })
+
   if (!isProjectDetailsPage) {
     return null
   }
@@ -59,7 +67,7 @@ export const FloatingAIButton = () => {
   return (
     <>
       {isChatOpen && !isMinimized && (
-        <Card className="fixed bottom-24 right-6 w-full max-w-lg h-[600px] flex flex-col shadow-2xl border-2 z-50 md:bottom-6 md:right-6">
+        <Card className="fixed bottom-24 right-6 w-full max-w-lg h-[600px] flex flex-col shadow-2xl border-2 z-50 md:bottom-6 md:right-6 md:w-[32rem]">
           <div className="flex items-center justify-between p-4 border-b bg-primary text-primary-foreground rounded-t-lg">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5" />
@@ -87,8 +95,8 @@ export const FloatingAIButton = () => {
               </Button>
             </div>
           </div>
-          <div className="flex-1 overflow-hidden">
-            <PersistentChat />
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <ChatInterface />
           </div>
         </Card>
       )}

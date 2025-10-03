@@ -138,7 +138,10 @@ export const ProjectDetailsPage = () => {
           </div>
           <div className="flex gap-2">
             <Button
-              onClick={() => setIsChatOpen(true)}
+              onClick={() => {
+                console.log('Add Transaction clicked, setting isChatOpen to true')
+                setIsChatOpen(true)
+              }}
               size="sm"
               className="shadow-md"
             >
