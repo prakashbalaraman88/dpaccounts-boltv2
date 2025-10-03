@@ -15,10 +15,22 @@ export const FloatingAIButton = () => {
   const location = useLocation()
   const { data: projects = [] } = useProjects()
 
+  const isProjectDetailsPage = location.pathname.includes('/projects/') && projectId
+
+  console.log('FloatingAIButton render:', {
+    isProjectDetailsPage,
+    isChatOpen,
+    isMinimized,
+    currentProject: currentProject?.name,
+    projectId,
+    pathname: location.pathname
+  })
+
   useEffect(() => {
     if (projectId && projects.length > 0) {
       const project = projects.find(p => p.id === projectId)
       if (project && project.id !== currentProject?.id) {
+        console.log('Setting current project:', project.name)
         setCurrentProject(project)
       }
     }
@@ -32,6 +44,7 @@ export const FloatingAIButton = () => {
   }, [currentProject, location, setIsChatOpen])
 
   const toggleChat = () => {
+    console.log('toggleChat called, current isChatOpen:', isChatOpen)
     if (isMinimized) {
       setIsMinimized(false)
     } else {
@@ -50,24 +63,17 @@ export const FloatingAIButton = () => {
     setIsMinimized(false)
   }
 
-  const isProjectDetailsPage = location.pathname.includes('/projects/') && projectId
-
-  console.log('FloatingAIButton render:', {
-    isProjectDetailsPage,
-    isChatOpen,
-    isMinimized,
-    currentProject: currentProject?.name,
-    projectId
-  })
-
   if (!isProjectDetailsPage) {
+    console.log('Not on project details page, returning null')
     return null
   }
+
+  console.log('About to render button/chat, isChatOpen:', isChatOpen, 'isMinimized:', isMinimized)
 
   return (
     <>
       {isChatOpen && !isMinimized && (
-        <Card className="fixed bottom-24 right-6 w-full max-w-lg h-[600px] flex flex-col shadow-2xl border-2 z-50 md:bottom-6 md:right-6 md:w-[32rem]">
+        <Card className="fixed bottom-24 right-6 w-full max-w-lg h-[600px] flex flex-col shadow-2xl border-2 z-[9999] md:bottom-6 md:right-6 md:w-[32rem]">
           <div className="flex items-center justify-between p-4 border-b bg-primary text-primary-foreground rounded-t-lg">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5" />
@@ -105,7 +111,7 @@ export const FloatingAIButton = () => {
         <Button
           onClick={toggleChat}
           size="lg"
-          className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-2xl hover:scale-110 transition-transform z-50 md:h-16 md:w-16"
+          className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-2xl hover:scale-110 transition-transform z-[9999] md:h-16 md:w-16 bg-primary"
         >
           <MessageCircle className="h-6 w-6 md:h-7 md:w-7" />
         </Button>
