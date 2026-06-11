@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Ledge",
+    "slug": "InteriorBooks",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "interiorbooks",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050505"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.ledge.accounts",
+      "softwareKeyboardLayoutMode": "adjustResize",
+      "adaptiveIcon": {
+        "backgroundColor": "#050505",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image-picker",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "image/*"
+          ],
+          "androidMultiIntentFilters": [
+            "image/*"
+          ]
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a377098b-8150-44ef-9e94-c74cce68dd9f"
+      }
+    },
+    "owner": "prakashb88"
+  }
+}
