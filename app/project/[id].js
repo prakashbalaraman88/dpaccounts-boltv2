@@ -192,7 +192,7 @@ export default function ProjectChat() {
         // Persist the receipt in cloud storage so all members can view it
         const receiptUrl = await storeReceipt(imageForAnalysis);
         await addMessage(projectId, 'image', 'Shared receipt image', receiptUrl || imageUri, 'user');
-        await processWithAI('Analyze this receipt/bill image and extract the transaction details.', imageForAnalysis, receiptUrl);
+        await processWithAI('Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.', imageForAnalysis, receiptUrl);
         setIsSending(false);
       })();
     }
@@ -269,7 +269,7 @@ export default function ProjectChat() {
         : asset.uri;
       const receiptUrl = await storeReceipt(imageForAnalysis);
       await addMessage(projectId, 'image', 'Receipt image', receiptUrl || asset.uri, 'user');
-      await processWithAI('Analyze this receipt/bill image and extract the transaction details.', imageForAnalysis, receiptUrl);
+      await processWithAI('Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.', imageForAnalysis, receiptUrl);
       setIsSending(false);
     }
   };
@@ -292,7 +292,7 @@ export default function ProjectChat() {
         : asset.uri;
       const receiptUrl = await storeReceipt(imageForAnalysis);
       await addMessage(projectId, 'image', 'Receipt photo', receiptUrl || asset.uri, 'user');
-      await processWithAI('Analyze this receipt/bill image and extract the transaction details.', imageForAnalysis, receiptUrl);
+      await processWithAI('Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.', imageForAnalysis, receiptUrl);
       setIsSending(false);
     }
   };
@@ -401,8 +401,9 @@ export default function ProjectChat() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior="padding"
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      // Android resizes the window itself (softwareKeyboardLayoutMode:
+      // adjustResize) — adding KAV padding on top causes double-jumps.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
       <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
@@ -510,8 +511,17 @@ export default function ProjectChat() {
             underlineColor="transparent"
             activeUnderlineColor="transparent"
             textColor={theme.colors.onSurface}
-            onSubmitEditing={handleSend}
-            disabled={isSending}
+            // WhatsApp-style: input stays enabled while the AI works so the
+            // keyboard never closes; multiline grows up to ~4 lines.
+            multiline
+            blurOnSubmit={false}
+            onKeyPress={(e) => {
+              const ne = e.nativeEvent || e;
+              if (Platform.OS === 'web' && ne.key === 'Enter' && !ne.shiftKey) {
+                e.preventDefault?.();
+                handleSend();
+              }
+            }}
             theme={{ colors: { primary: 'transparent' } }}
           />
         </View>
@@ -987,7 +997,8 @@ const styles = StyleSheet.create({
   },
   textInput: {
     backgroundColor: 'transparent',
-    height: 44,
+    minHeight: 44,
+    maxHeight: 110,
     fontSize: 14,
     paddingHorizontal: 16,
   },

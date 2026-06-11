@@ -231,7 +231,33 @@ export const useAppStore = create((set, get) => ({
 
     if (error) throw error;
 
-    await get().loadProject(projectId);
+    // Append locally instead of reloading the whole chat — keeps sends
+    // instant (WhatsApp-style). Full reloads happen on transaction commit.
+    const { currentProject, messages } = get();
+    if (currentProject && currentProject.id === projectId) {
+      set({
+        messages: [
+          ...messages,
+          {
+            id: data.id,
+            project_id: data.project_id,
+            type: data.type,
+            content: data.content,
+            image_uri: data.image_uri,
+            sender: data.sender,
+            sender_id: data.sender_id,
+            created_at: data.created_at,
+            transaction_id: null,
+            transaction_type: null,
+            amount: null,
+            category_id: null,
+            category_label: null,
+            vendor: null,
+            receipt_uri: null,
+          },
+        ],
+      });
+    }
     return data.id;
   },
 

@@ -1,0 +1,47 @@
+# EAS upload ignore — mirrors .gitignore EXCEPT .env is included so
+# EXPO_PUBLIC_OPENROUTER_API_KEY is inlined into the build (the app also
+# reads the key from Supabase app_settings at runtime; this is the default).
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files (note: .env itself is deliberately NOT ignored here)
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# local assistant settings + test assets not needed in builds
+.claude/
+scripts/test-assets/

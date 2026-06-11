@@ -46,6 +46,7 @@ RULES:
 - Extract the vendor/payee name when mentioned ("carpenter Raju" → vendor "Raju"; "from Shree Traders" → vendor "Shree Traders").
 - Do NOT record pending/due/future/hypothetical amounts ("pending payment", "due", "balance remaining", "will pay", "quote", "estimate", "baki hai") — isTransaction is true ONLY for money that has already moved. "Cleared dues 12000" HAS moved (record it); "12000 dues pending" has NOT.
 - For receipt/bill images: read the TOTAL/grand total (prefer the final payable amount incl. GST), the shop/vendor name, and the date if printed. A bill image is almost always an EXPENSE.
+- PAYMENT APP SCREENSHOTS (GPay/PhonePe/Paytm/bank apps): determine direction ONLY from the words on screen. "Paid to", "Sent to", "Payment to", "Debited", "Money sent", a name with "To:" → EXPENSE (vendor = that name). "Received from", "Credited", "Money received", "Added to bank" → incoming. The user is an interior design business owner sharing their own payment screenshots — when a payment screenshot's direction is ambiguous, default to EXPENSE, never incoming.
 - Pick category_id strictly from this list:
   incoming: current_account (bank/UPI/NEFT/online), savings_account, cash, cheque, others_incoming
   expense: measurements, designer_architect, construction_material (cement/plywood/tiles/paint/laminate/hardware shops), factory_materials, onsite_materials, jobwork (polish/installation/labour), carpenter, electrician, false_ceiling, operational (travel/fuel/food/office), others_expense
