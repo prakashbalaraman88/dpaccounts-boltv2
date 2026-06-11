@@ -104,6 +104,20 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================
+-- STEP 2b: ADMIN CHECK HELPER
+-- SECURITY DEFINER so it reads profiles WITHOUT re-triggering RLS.
+-- Policies must use this instead of querying profiles directly —
+-- a profiles policy that subqueries profiles recurses (error 42P17).
+-- ============================================
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin');
+$$;
+
+-- ============================================
 -- STEP 3: ENABLE RLS ON ALL TABLES
 -- ============================================
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -124,9 +138,7 @@ CREATE POLICY "Users can view own profile"
 
 CREATE POLICY "Admins can view all profiles"
   ON public.profiles FOR SELECT
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
@@ -135,16 +147,12 @@ CREATE POLICY "Users can update own profile"
 
 CREATE POLICY "Admins can update any profile"
   ON public.profiles FOR UPDATE
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 -- --- Projects Policies ---
 CREATE POLICY "Admins full access on projects"
   ON public.projects FOR ALL
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 CREATE POLICY "Users can view assigned projects"
   ON public.projects FOR SELECT
@@ -167,9 +175,7 @@ CREATE POLICY "Users can update assigned projects"
 -- --- Project Members Policies ---
 CREATE POLICY "Admins full access on project_members"
   ON public.project_members FOR ALL
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 CREATE POLICY "Users can view own memberships"
   ON public.project_members FOR SELECT
@@ -178,9 +184,7 @@ CREATE POLICY "Users can view own memberships"
 -- --- Messages Policies ---
 CREATE POLICY "Admins full access on messages"
   ON public.messages FOR ALL
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 CREATE POLICY "Users can view messages of assigned projects"
   ON public.messages FOR SELECT
@@ -203,9 +207,7 @@ CREATE POLICY "Users can add messages to assigned projects"
 -- --- Transactions Policies ---
 CREATE POLICY "Admins full access on transactions"
   ON public.transactions FOR ALL
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 CREATE POLICY "Users can view transactions of assigned projects"
   ON public.transactions FOR SELECT
@@ -240,9 +242,7 @@ CREATE POLICY "Authenticated users can read settings"
 
 CREATE POLICY "Admins can manage settings"
   ON public.app_settings FOR ALL
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 -- ============================================
 -- STEP 5: HELPER FUNCTIONS
