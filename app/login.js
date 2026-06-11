@@ -32,9 +32,14 @@ export default function LoginScreen() {
       await login(email, password);
     } catch (e) {
       console.error('Login error:', e);
-      setError(e.message === 'Invalid login credentials'
-        ? 'Invalid email or password'
-        : e.message || 'Login failed. Please try again.');
+      const msg = e.message || '';
+      if (msg === 'Invalid login credentials') {
+        setError('Invalid email or password');
+      } else if (/failed to fetch|network|name.*resolved/i.test(msg)) {
+        setError('Cannot reach the server. Check your internet connection — or the Supabase project may be paused (ask your admin).');
+      } else {
+        setError(msg || 'Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
