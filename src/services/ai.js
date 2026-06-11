@@ -28,7 +28,9 @@ export const MODEL_CHAIN = [
 ];
 
 const MAX_ATTEMPTS_PER_MODEL = 2;
-const TIMEOUT_MS = 45000;
+// Chat UX: a reply needs to land in seconds. Slow free-tier nodes get cut
+// off and the chain moves on (or degrades to the local result).
+const TIMEOUT_MS = 20000;
 
 // Confidence at or above which we trust the local parser and skip the LLM
 const LOCAL_FAST_PATH_CONFIDENCE = 0.85;
@@ -246,6 +248,18 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
   const local = imageUri ? null : parseTransactionText(text);
   if (local && local.isTransaction && local.confidence >= LOCAL_FAST_PATH_CONFIDENCE) {
     return local;
+  }
+
+  // Confident NON-transactions ("hello", questions, quotes/estimates,
+  // pending dues) also answer instantly — burning a slow free-tier LLM
+  // call on small talk blocks the chat and wastes the daily quota.
+  if (local && !local.isTransaction && local.confidence >= LOCAL_FAST_PATH_CONFIDENCE) {
+    return {
+      isTransaction: false,
+      reply:
+        "I record money movements. Try 'Received ₹1,00,000 from client' or 'Paid 50,000 to carpenter Raju' — or share a receipt/payment screenshot.",
+      source: 'local',
+    };
   }
 
   // 2) LLM path (needed for images, used for ambiguous text)

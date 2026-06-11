@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -90,7 +90,10 @@ export default function ProjectChat() {
     loadProject,
     addMessage,
     addTransaction,
+    updateTransaction,
+    deleteTransaction,
     updateProject,
+    deleteProject,
     aiApiKey,
   } = useAppStore();
 
@@ -104,6 +107,13 @@ export default function ProjectChat() {
   const [editProjectName, setEditProjectName] = useState('');
   const [editBudget, setEditBudget] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Transaction editor (tap a transaction badge to fix amount/type/category)
+  const [editTxn, setEditTxn] = useState(null);
+  const [editTxnType, setEditTxnType] = useState('expense');
+  const [editTxnAmount, setEditTxnAmount] = useState('');
+  const [editTxnVendor, setEditTxnVendor] = useState('');
+  const [confirmTxnDelete, setConfirmTxnDelete] = useState(false);
+  const [confirmProjectDelete, setConfirmProjectDelete] = useState(false);
 
   // Listen for keyboard to adjust edit modal height on Android
   useEffect(() => {
@@ -130,13 +140,10 @@ export default function ProjectChat() {
     }, [projectId])
   );
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages]);
+  // Chat renders as an INVERTED list (newest at the bottom, like WhatsApp):
+  // no scrollToEnd hacks, and FlatList virtualization starts from the
+  // latest messages instead of cutting the chat off after 10 rows.
+  const chatData = useMemo(() => [...messages].reverse(), [messages]);
 
   // Auto-process shared image from share intent
   const sharedImageProcessed = useRef(false);
@@ -300,10 +307,14 @@ export default function ProjectChat() {
   const handleCategorySelect = async (category) => {
     if (!pendingTransaction) return;
 
+    // The Incoming/Expense toggle is the user's correction of the AI's
+    // detection — the ACTIVE TAB decides the saved type, not the original.
+    const txType = selectedType || pendingTransaction.type;
+
     const messageId = await addMessage(
       projectId,
       'text',
-      `${pendingTransaction.type === 'incoming' ? 'Incoming' : 'Expense'}: ${formatRupees(pendingTransaction.amount)}\nCategory: ${category.label}\n${pendingTransaction.description}`,
+      `${txType === 'incoming' ? 'Incoming' : 'Expense'}: ${formatRupees(pendingTransaction.amount)}\nCategory: ${category.label}\n${pendingTransaction.description}`,
       null,
       'bot'
     );
@@ -311,7 +322,7 @@ export default function ProjectChat() {
     await addTransaction(
       projectId,
       messageId,
-      pendingTransaction.type,
+      txType,
       pendingTransaction.amount,
       category.id,
       category.label,
@@ -327,24 +338,65 @@ export default function ProjectChat() {
     setSelectedType(null);
   };
 
+  // ---- Transaction editor (fix wrong type/amount/category, or delete) ----
+
+  const openTxnEditor = (item) => {
+    setEditTxn({ id: item.transaction_id });
+    setEditTxnType(item.transaction_type || 'expense');
+    setEditTxnAmount(item.amount != null ? String(item.amount) : '');
+    setEditTxnVendor(item.vendor || '');
+    setConfirmTxnDelete(false);
+  };
+
+  const handleTxnEditSave = async (category) => {
+    if (!editTxn) return;
+    const amount = parseFloat(editTxnAmount);
+    if (!isFinite(amount) || amount <= 0) return;
+    await updateTransaction(editTxn.id, projectId, {
+      type: editTxnType,
+      amount,
+      category_id: category.id,
+      category_label: category.label,
+      vendor: editTxnVendor.trim(),
+    });
+    setEditTxn(null);
+  };
+
+  const handleTxnDelete = async () => {
+    if (!confirmTxnDelete) {
+      setConfirmTxnDelete(true);
+      return;
+    }
+    await deleteTransaction(editTxn.id, projectId);
+    setEditTxn(null);
+  };
+
+  const handleProjectDelete = async () => {
+    if (!confirmProjectDelete) {
+      setConfirmProjectDelete(true);
+      return;
+    }
+    await deleteProject(projectId);
+    setShowEditModal(false);
+    router.replace('/');
+  };
+
   const renderMessage = ({ item, index }) => {
     const isUser = item.sender === 'user';
     const isSystem = item.sender === 'system';
 
+    // Plain Views: entering animations fight the inverted list's scaleY(-1)
+    // cell transform (flipped/flickering bubbles, endless repaints).
     if (isSystem) {
       return (
-        <Animated.View
-          entering={FadeIn.duration(400)}
-          style={styles.systemMessage}
-        >
+        <View style={styles.systemMessage}>
           <Text style={styles.systemText}>{item.content}</Text>
-        </Animated.View>
+        </View>
       );
     }
 
     return (
-      <Animated.View
-        entering={FadeInUp.delay(50).duration(350).springify().damping(18)}
+      <View
         style={[styles.messageBubbleWrapper, isUser ? styles.sentWrapper : styles.receivedWrapper]}
       >
         <View
@@ -359,7 +411,8 @@ export default function ProjectChat() {
           )}
           <Text style={[styles.messageText, isUser && styles.sentText]}>{item.content}</Text>
           {item.transaction_id && (
-            <View
+            <Pressable
+              onPress={() => openTxnEditor(item)}
               style={[
                 styles.transactionBadge,
                 {
@@ -383,11 +436,11 @@ export default function ProjectChat() {
               >
                 {item.transaction_type === 'incoming' ? '↓' : '↑'} {formatRupees(item.amount)} {'\u2022'} {item.category_label}
               </Text>
-            </View>
+            </Pressable>
           )}
           <Text style={styles.messageTime}>{formatTime(item.created_at)}</Text>
         </View>
-      </Animated.View>
+      </View>
     );
   };
 
@@ -475,7 +528,8 @@ export default function ProjectChat() {
       {/* Chat Messages */}
       <FlatList
         ref={flatListRef}
-        data={messages}
+        data={chatData}
+        inverted={messages.length > 0}
         renderItem={renderMessage}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.messagesList}
@@ -544,8 +598,10 @@ export default function ProjectChat() {
         </Animated.View>
       </Animated.View>
 
-      {/* Category Selection Modal */}
+      {/* Category Selection Modal — conditionally mounted: Paper's web
+          dismiss animation can leave a stuck empty modal otherwise */}
       <Portal>
+        {showCategoryModal && (
         <Modal
           visible={showCategoryModal}
           onDismiss={() => {
@@ -644,6 +700,7 @@ export default function ProjectChat() {
             <Text style={styles.modalCancelText}>Cancel</Text>
           </Pressable>
         </Modal>
+        )}
       </Portal>
       {/* Edit Project Modal */}
       <Portal>
@@ -730,14 +787,113 @@ export default function ProjectChat() {
               <Text style={styles.editSaveText}>Save Changes</Text>
             </Pressable>
 
+            <Pressable style={styles.dangerButton} onPress={handleProjectDelete}>
+              <Text style={styles.dangerButtonText}>
+                {confirmProjectDelete
+                  ? 'Tap again to permanently delete'
+                  : 'Delete Project'}
+              </Text>
+            </Pressable>
+
             <Pressable
               style={styles.modalCancelButton}
-              onPress={() => setShowEditModal(false)}
+              onPress={() => {
+                setShowEditModal(false);
+                setConfirmProjectDelete(false);
+              }}
             >
               <Text style={styles.modalCancelText}>Cancel</Text>
             </Pressable>
           </ScrollView>
         </Modal>
+      </Portal>
+
+      {/* Transaction Editor Modal — tap a transaction badge to open */}
+      <Portal>
+        {!!editTxn && (
+        <Modal
+          visible={!!editTxn}
+          onDismiss={() => setEditTxn(null)}
+          contentContainerStyle={styles.categoryModal}
+          style={styles.categoryModalOverlay}
+        >
+          <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
+            <View style={styles.modalHandle} />
+            <Text style={styles.categoryModalTitle}>Edit Transaction</Text>
+
+            <View style={styles.typeToggle}>
+              <Pressable
+                style={[styles.typeTab, editTxnType === 'incoming' && styles.typeTabActiveIncoming]}
+                onPress={() => setEditTxnType('incoming')}
+              >
+                <Text style={[styles.typeTabText, editTxnType === 'incoming' && { color: theme.colors.incoming }]}>
+                  Incoming
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.typeTab, editTxnType === 'expense' && styles.typeTabActiveExpense]}
+                onPress={() => setEditTxnType('expense')}
+              >
+                <Text style={[styles.typeTabText, editTxnType === 'expense' && { color: theme.colors.expense }]}>
+                  Expense
+                </Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.editField}>
+              <Text style={styles.editLabel}>Amount (₹)</Text>
+              <TextInput
+                value={editTxnAmount}
+                onChangeText={setEditTxnAmount}
+                style={styles.editInput}
+                mode="outlined"
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={theme.colors.secondary}
+                outlineColor={theme.colors.outline}
+                activeOutlineColor={theme.colors.primary}
+                textColor={theme.colors.onSurface}
+                outlineStyle={{ borderRadius: 12 }}
+                theme={{ roundness: 12 }}
+              />
+            </View>
+
+            <View style={styles.editField}>
+              <Text style={styles.editLabel}>Vendor (optional)</Text>
+              <TextInput
+                value={editTxnVendor}
+                onChangeText={setEditTxnVendor}
+                style={styles.editInput}
+                mode="outlined"
+                placeholder="Vendor / payee"
+                placeholderTextColor={theme.colors.secondary}
+                outlineColor={theme.colors.outline}
+                activeOutlineColor={theme.colors.primary}
+                textColor={theme.colors.onSurface}
+                outlineStyle={{ borderRadius: 12 }}
+                theme={{ roundness: 12 }}
+              />
+            </View>
+
+            <Text style={[styles.editLabel, { marginTop: 4 }]}>Tap a category to save</Text>
+            <View style={styles.categoryList}>
+              {CATEGORIES[editTxnType].map((cat) => (
+                <CategoryItem key={cat.id} category={cat} onPress={handleTxnEditSave} />
+              ))}
+            </View>
+
+            <Pressable style={styles.dangerButton} onPress={handleTxnDelete}>
+              <Text style={styles.dangerButtonText}>
+                {confirmTxnDelete ? 'Tap again to confirm delete' : 'Delete Transaction'}
+              </Text>
+            </Pressable>
+
+            <Pressable style={styles.modalCancelButton} onPress={() => setEditTxn(null)}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+          </ScrollView>
+        </Modal>
+        )}
       </Portal>
     </KeyboardAvoidingView>
   );
@@ -1163,6 +1319,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#0A0A0A',
+    letterSpacing: 0.3,
+  },
+  dangerButton: {
+    backgroundColor: theme.colors.expenseMuted,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.25)',
+  },
+  dangerButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.expense,
     letterSpacing: 0.3,
   },
 });
