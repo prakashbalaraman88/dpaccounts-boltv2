@@ -1,11 +1,11 @@
 import 'react-native-url-polyfill/auto';
-import { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { ThemeProvider } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Pressable, ScrollView } from 'react-native';
 import { Text } from 'react-native-paper';
 import { theme } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
@@ -28,6 +28,80 @@ const navigationTheme = {
     heavy: { fontFamily: 'System', fontWeight: '900' },
   },
 };
+
+// ---- Crash visibility: show errors instead of silently closing the app ----
+
+function CrashScreen({ message, onReset }) {
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', padding: 28 }}>
+      <Text style={{ fontSize: 20, fontWeight: '700', color: theme.colors.onSurface, marginBottom: 10 }}>
+        Something went wrong
+      </Text>
+      <Text style={{ fontSize: 13, color: theme.colors.secondary, marginBottom: 16 }}>
+        The app hit an unexpected error. Screenshot this and send it to support:
+      </Text>
+      <ScrollView style={{ maxHeight: 220, backgroundColor: theme.colors.surfaceElevated, borderRadius: 12, padding: 14, marginBottom: 20 }}>
+        <Text selectable style={{ fontSize: 12, color: theme.colors.expense, fontFamily: 'monospace' }}>
+          {String(message)}
+        </Text>
+      </ScrollView>
+      <Pressable
+        onPress={onReset}
+        style={{ backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
+      >
+        <Text style={{ color: '#0A0A0A', fontWeight: '700', fontSize: 15 }}>Try Again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('Render error:', error, info?.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <CrashScreen
+          message={this.state.error?.message || String(this.state.error)}
+          onReset={() => this.setState({ error: null })}
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function CrashGuard({ children }) {
+  const [fatal, setFatal] = useState(null);
+
+  useEffect(() => {
+    const ErrorUtils = global.ErrorUtils;
+    if (!ErrorUtils?.setGlobalHandler) return;
+    const prev = ErrorUtils.getGlobalHandler?.();
+    ErrorUtils.setGlobalHandler((e, isFatal) => {
+      console.error('Global error:', e, 'fatal:', isFatal);
+      if (isFatal) {
+        // Swallow the fatal: render our screen instead of letting RN abort
+        setFatal(e?.message || String(e));
+      } else if (prev) {
+        prev(e, isFatal);
+      }
+    });
+    return () => {
+      if (prev) ErrorUtils.setGlobalHandler(prev);
+    };
+  }, []);
+
+  if (fatal) {
+    return <CrashScreen message={fatal} onReset={() => setFatal(null)} />;
+  }
+  return children;
+}
 
 function SplashScreen() {
   return (
@@ -108,12 +182,16 @@ function RootLayoutInner() {
 
 export default function RootLayout() {
   return (
-    <ShareIntentProvider options={{ resetOnBackground: false }}>
-      <PaperProvider theme={theme}>
-        <ThemeProvider value={navigationTheme}>
-          <RootLayoutInner />
-        </ThemeProvider>
-      </PaperProvider>
-    </ShareIntentProvider>
+    <ErrorBoundary>
+      <CrashGuard>
+        <ShareIntentProvider options={{ resetOnBackground: false }}>
+          <PaperProvider theme={theme}>
+            <ThemeProvider value={navigationTheme}>
+              <RootLayoutInner />
+            </ThemeProvider>
+          </PaperProvider>
+        </ShareIntentProvider>
+      </CrashGuard>
+    </ErrorBoundary>
   );
 }

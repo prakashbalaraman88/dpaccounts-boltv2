@@ -28,6 +28,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { theme, formatRupees, CATEGORIES } from '../../src/constants/theme';
 import { formatTime } from '../../src/utils/datetime';
+import { prepareReceiptImage } from '../../src/utils/images';
 import { useAppStore } from '../../src/stores/appStore';
 import { analyzeMessage } from '../../src/services/ai';
 import { uploadReceiptImage } from '../../src/services/supabase';
@@ -145,62 +146,56 @@ export default function ProjectChat() {
   // latest messages instead of cutting the chat off after 10 rows.
   const chatData = useMemo(() => [...messages].reverse(), [messages]);
 
-  // Auto-process shared image from share intent
+  // Auto-process shared image from share intent.
+  // Fully fenced: in release builds an unhandled rejection here kills the
+  // whole app, so every step is caught and surfaced as a chat message.
   const sharedImageProcessed = useRef(false);
   useEffect(() => {
     if (sharedImage && currentProject && !sharedImageProcessed.current && !isSending) {
       sharedImageProcessed.current = true;
-      let imageUri = decodeURIComponent(sharedImage);
-      // Ensure absolute paths have file:// prefix
-      if (imageUri.startsWith('/')) {
-        imageUri = 'file://' + imageUri;
-      }
       (async () => {
         setIsSending(true);
-        // Convert shared image to base64 data URI for the AI
-        // fetch() can't read file:// or content:// URIs reliably on Android
-        let imageForAnalysis = imageUri;
         try {
-          // For content:// URIs (Android share intent), copy to cache first
+          let imageUri;
+          try {
+            imageUri = decodeURIComponent(String(sharedImage));
+          } catch {
+            imageUri = String(sharedImage);
+          }
+          if (imageUri.startsWith('/')) {
+            imageUri = 'file://' + imageUri;
+          }
+
+          // content:// URIs (Android share) → copy into our cache first
           let readPath = imageUri;
           if (imageUri.startsWith('content://')) {
             const cachePath = FileSystem.cacheDirectory + 'shared_receipt_' + Date.now() + '.jpg';
             await FileSystem.copyAsync({ from: imageUri, to: cachePath });
             readPath = cachePath;
           }
-          const base64 = await FileSystem.readAsStringAsync(readPath, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          imageForAnalysis = `data:image/jpeg;base64,${base64}`;
+
+          // Downscale to a small JPEG — full-size screenshots OOM-crash
+          // mid-range phones when base64'd
+          const prepared = await prepareReceiptImage(readPath);
+          const analysisUri = prepared.dataUri || readPath;
+
+          const receiptUrl = await storeReceipt(analysisUri);
+          await addMessage(projectId, 'image', 'Shared receipt image', receiptUrl || prepared.uri, 'user');
+          await processWithAI(
+            'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
+            analysisUri,
+            receiptUrl
+          );
         } catch (e) {
-          console.error('Error reading shared image (attempt 1):', e);
-          // Fallback: try alternate path formats
-          try {
-            let altPath = imageUri;
-            if (imageUri.startsWith('file://')) {
-              altPath = imageUri.replace('file://', '');
-            } else if (!imageUri.startsWith('/') && !imageUri.startsWith('content://')) {
-              altPath = 'file://' + imageUri;
-            }
-            // If it was content://, try copying to cache
-            if (altPath.startsWith('content://')) {
-              const cachePath = FileSystem.cacheDirectory + 'shared_receipt_fb_' + Date.now() + '.jpg';
-              await FileSystem.copyAsync({ from: altPath, to: cachePath });
-              altPath = cachePath;
-            }
-            const base64 = await FileSystem.readAsStringAsync(altPath, {
-              encoding: FileSystem.EncodingType.Base64,
-            });
-            imageForAnalysis = `data:image/jpeg;base64,${base64}`;
-          } catch (e2) {
-            console.error('All file reading attempts failed:', e2);
-          }
+          console.error('Shared image processing failed:', e);
+          await addMessage(
+            projectId, 'text',
+            `Could not process the shared image (${e?.message || 'unknown error'}). Try picking it with the gallery button instead.`,
+            null, 'system'
+          ).catch(() => {});
+        } finally {
+          setIsSending(false);
         }
-        // Persist the receipt in cloud storage so all members can view it
-        const receiptUrl = await storeReceipt(imageForAnalysis);
-        await addMessage(projectId, 'image', 'Shared receipt image', receiptUrl || imageUri, 'user');
-        await processWithAI('Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.', imageForAnalysis, receiptUrl);
-        setIsSending(false);
       })();
     }
   }, [sharedImage, currentProject]);
@@ -210,12 +205,22 @@ export default function ProjectChat() {
   useEffect(() => {
     if (sharedText && currentProject && !sharedTextProcessed.current && !isSending) {
       sharedTextProcessed.current = true;
-      const text = decodeURIComponent(String(sharedText));
       (async () => {
         setIsSending(true);
-        await addMessage(projectId, 'text', text, null, 'user');
-        await processWithAI(text);
-        setIsSending(false);
+        try {
+          let text;
+          try {
+            text = decodeURIComponent(String(sharedText));
+          } catch {
+            text = String(sharedText);
+          }
+          await addMessage(projectId, 'text', text, null, 'user');
+          await processWithAI(text);
+        } catch (e) {
+          console.error('Shared text processing failed:', e);
+        } finally {
+          setIsSending(false);
+        }
       })();
     }
   }, [sharedText, currentProject]);
@@ -270,29 +275,48 @@ export default function ProjectChat() {
 
     setInputText('');
     setIsSending(true);
-    await addMessage(projectId, 'text', text, null, 'user');
-    await processWithAI(text);
-    setIsSending(false);
+    try {
+      await addMessage(projectId, 'text', text, null, 'user');
+      await processWithAI(text);
+    } catch (e) {
+      console.error('Send failed:', e);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // Shared pipeline for picked/captured images: downscale → upload → analyze
+  const processPickedImage = async (asset, label) => {
+    setIsSending(true);
+    try {
+      const prepared = await prepareReceiptImage(asset.uri);
+      const analysisUri = prepared.dataUri || asset.uri;
+      const receiptUrl = await storeReceipt(analysisUri);
+      await addMessage(projectId, 'image', label, receiptUrl || prepared.uri, 'user');
+      await processWithAI(
+        'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
+        analysisUri,
+        receiptUrl
+      );
+    } catch (e) {
+      console.error('Image processing failed:', e);
+      await addMessage(
+        projectId, 'text',
+        `Could not process the image (${e?.message || 'unknown error'}).`,
+        null, 'system'
+      ).catch(() => {});
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handlePickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
-      base64: true,
+      quality: 0.9,
     });
-
     if (!result.canceled && result.assets[0]) {
-      setIsSending(true);
-      const asset = result.assets[0];
-      // Use data URI for the AI (content:// URIs don't work with fetch on Android)
-      const imageForAnalysis = asset.base64
-        ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-        : asset.uri;
-      const receiptUrl = await storeReceipt(imageForAnalysis);
-      await addMessage(projectId, 'image', 'Receipt image', receiptUrl || asset.uri, 'user');
-      await processWithAI('Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.', imageForAnalysis, receiptUrl);
-      setIsSending(false);
+      await processPickedImage(result.assets[0], 'Receipt image');
     }
   };
 
@@ -300,22 +324,9 @@ export default function ProjectChat() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
 
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.7,
-      base64: true,
-    });
-
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.9 });
     if (!result.canceled && result.assets[0]) {
-      setIsSending(true);
-      const asset = result.assets[0];
-      // Use data URI for the AI (content:// URIs don't work with fetch on Android)
-      const imageForAnalysis = asset.base64
-        ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-        : asset.uri;
-      const receiptUrl = await storeReceipt(imageForAnalysis);
-      await addMessage(projectId, 'image', 'Receipt photo', receiptUrl || asset.uri, 'user');
-      await processWithAI('Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.', imageForAnalysis, receiptUrl);
-      setIsSending(false);
+      await processPickedImage(result.assets[0], 'Receipt photo');
     }
   };
 
