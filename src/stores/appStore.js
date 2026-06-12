@@ -261,6 +261,24 @@ export const useAppStore = create((set, get) => ({
     return data.id;
   },
 
+  // Swap a message's image for its cloud URL once the background upload
+  // finishes (the bubble shows the local file instantly in the meantime).
+  updateMessageImage: async (messageId, projectId, imageUri) => {
+    try {
+      await supabase.from('messages').update({ image_uri: imageUri }).eq('id', messageId);
+      const { currentProject, messages } = get();
+      if (currentProject && currentProject.id === projectId) {
+        set({
+          messages: messages.map((m) =>
+            m.id === messageId ? { ...m, image_uri: imageUri } : m
+          ),
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to update message image:', e?.message);
+    }
+  },
+
   // === TRANSACTIONS ===
 
   addTransaction: async (projectId, messageId, type, amount, categoryId, categoryLabel, description, options = {}) => {

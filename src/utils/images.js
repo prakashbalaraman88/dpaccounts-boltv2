@@ -6,7 +6,9 @@
 
 import { Platform } from 'react-native';
 
-const MAX_WIDTH = 1280;
+// 1024px keeps GPay/receipt text fully legible for the vision models while
+// cutting the base64 payload ~35% vs 1280 — directly faster uploads+inference.
+const MAX_WIDTH = 1024;
 const JPEG_QUALITY = 0.7;
 
 async function manipulate(uri) {

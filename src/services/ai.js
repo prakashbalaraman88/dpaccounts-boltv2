@@ -28,6 +28,12 @@ export const MODEL_CHAIN = [
 ];
 
 const MAX_ATTEMPTS_PER_MODEL = 2;
+
+// Images fail-fast: one attempt per model, tighter timeout, short backoff —
+// don't sit on a congested provider while two fallbacks idle. Receipts also
+// need fewer output tokens than free-form text replies.
+const IMAGE_ATTEMPTS_PER_MODEL = 1;
+const IMAGE_TIMEOUT_MS = 15000;
 // Chat UX: a reply needs to land in seconds. Slow free-tier nodes get cut
 // off and the chain moves on (or degrades to the local result).
 const TIMEOUT_MS = 20000;
@@ -171,9 +177,12 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
     : messageText;
 
   let lastError = null;
+  const isImage = Boolean(imageDataUri);
+  const maxAttempts = isImage ? IMAGE_ATTEMPTS_PER_MODEL : MAX_ATTEMPTS_PER_MODEL;
+  const timeoutMs = isImage ? IMAGE_TIMEOUT_MS : TIMEOUT_MS;
 
   for (const model of MODEL_CHAIN) {
-    for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_MODEL; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const resp = await fetchWithTimeout(
           `${BASE_URL}/chat/completions`,
@@ -192,16 +201,16 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
                 { role: 'user', content: userContent },
               ],
               temperature: 0.1,
-              max_tokens: 500,
+              max_tokens: isImage ? 300 : 500,
             }),
           },
-          TIMEOUT_MS
+          timeoutMs
         );
 
         if (resp.status === 429) {
           // Free-tier saturation — brief backoff, then next attempt/model
           lastError = new Error('rate-limited (429)');
-          await sleep(1500 * (attempt + 1));
+          await sleep(isImage ? 800 : 1500 * (attempt + 1));
           continue;
         }
 

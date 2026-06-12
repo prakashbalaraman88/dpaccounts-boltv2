@@ -10,6 +10,7 @@ import {
   ScrollView,
   Keyboard,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Text, TextInput, IconButton, Portal, Modal, Chip } from 'react-native-paper';
 import Animated, {
@@ -95,6 +96,7 @@ export default function ProjectChat() {
     deleteTransaction,
     updateProject,
     deleteProject,
+    updateMessageImage,
     aiApiKey,
   } = useAppStore();
 
@@ -179,12 +181,17 @@ export default function ProjectChat() {
           const prepared = await prepareReceiptImage(readPath);
           const analysisUri = prepared.dataUri || readPath;
 
-          const receiptUrl = await storeReceipt(analysisUri);
-          await addMessage(projectId, 'image', 'Shared receipt image', receiptUrl || prepared.uri, 'user');
+          // Upload runs CONCURRENTLY with the AI call — its URL is only
+          // needed when the user saves the category, seconds from now.
+          const uploadPromise = storeReceipt(analysisUri);
+          const messageId = await addMessage(projectId, 'image', 'Shared receipt image', prepared.uri, 'user');
+          uploadPromise
+            .then((url) => { if (url && url !== prepared.uri) updateMessageImage(messageId, projectId, url); })
+            .catch(() => {});
           await processWithAI(
             'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
             analysisUri,
-            receiptUrl
+            uploadPromise
           );
         } catch (e) {
           console.error('Shared image processing failed:', e);
@@ -225,6 +232,8 @@ export default function ProjectChat() {
     }
   }, [sharedText, currentProject]);
 
+  // receiptUrl may be a string OR a pending upload Promise — it's resolved
+  // at category-save time so the AI never waits on the upload.
   const processWithAI = async (content, imageUri = null, receiptUrl = null) => {
     try {
       // analyzeMessage parses simple text locally and only needs the API
@@ -285,18 +294,21 @@ export default function ProjectChat() {
     }
   };
 
-  // Shared pipeline for picked/captured images: downscale → upload → analyze
+  // Shared pipeline for picked/captured images: downscale → upload ∥ analyze
   const processPickedImage = async (asset, label) => {
     setIsSending(true);
     try {
       const prepared = await prepareReceiptImage(asset.uri);
       const analysisUri = prepared.dataUri || asset.uri;
-      const receiptUrl = await storeReceipt(analysisUri);
-      await addMessage(projectId, 'image', label, receiptUrl || prepared.uri, 'user');
+      const uploadPromise = storeReceipt(analysisUri);
+      const messageId = await addMessage(projectId, 'image', label, prepared.uri, 'user');
+      uploadPromise
+        .then((url) => { if (url && url !== prepared.uri) updateMessageImage(messageId, projectId, url); })
+        .catch(() => {});
       await processWithAI(
         'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
         analysisUri,
-        receiptUrl
+        uploadPromise
       );
     } catch (e) {
       console.error('Image processing failed:', e);
@@ -337,6 +349,12 @@ export default function ProjectChat() {
     // detection — the ACTIVE TAB decides the saved type, not the original.
     const txType = selectedType || pendingTransaction.type;
 
+    // The receipt upload ran in the background; resolve it now if pending
+    let receiptUri = pendingTransaction.receiptUri || null;
+    if (receiptUri && typeof receiptUri.then === 'function') {
+      receiptUri = await receiptUri.catch(() => null);
+    }
+
     const messageId = await addMessage(
       projectId,
       'text',
@@ -355,7 +373,7 @@ export default function ProjectChat() {
       pendingTransaction.description,
       {
         vendor: pendingTransaction.vendor || '',
-        receiptUri: pendingTransaction.receiptUri || null,
+        receiptUri,
       }
     );
 
@@ -573,6 +591,14 @@ export default function ProjectChat() {
           </Animated.View>
         }
       />
+
+      {/* Working indicator — instant feedback while the AI reads receipts */}
+      {isSending && (
+        <View style={styles.analyzingPill}>
+          <ActivityIndicator size="small" color={theme.colors.accent} />
+          <Text style={styles.analyzingText}>Analyzing…</Text>
+        </View>
+      )}
 
       {/* Input Bar */}
       <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.inputBar}>
@@ -1153,6 +1179,26 @@ const styles = StyleSheet.create({
     color: theme.colors.secondary,
     textAlign: 'center',
     lineHeight: 21,
+  },
+
+  analyzingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 8,
+    marginLeft: 14,
+    marginBottom: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+  },
+  analyzingText: {
+    fontSize: 12,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '600',
   },
 
   // Input Bar
