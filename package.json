@@ -20,7 +20,7 @@
     "expo-image-picker": "~55.0.20",
     "expo-linking": "~55.0.15",
     "expo-router": "~55.0.16",
-    "expo-share-intent": "^6.0.0",
+    "expo-share-intent": "^6.1.1",
     "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
     "react-dom": "19.2.0",
