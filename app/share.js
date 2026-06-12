@@ -62,6 +62,10 @@ export default function ShareScreen() {
   }, []);
 
   const sharedImageUri = shareIntent?.files?.[0]?.path || null;
+  // GPay & co. often share plain text instead of an image
+  const sharedText = !sharedImageUri
+    ? shareIntent?.text || shareIntent?.webUrl || null
+    : null;
 
   const handleClose = () => {
     resetShareIntent();
@@ -69,7 +73,7 @@ export default function ShareScreen() {
   };
 
   // If no share data, show empty state
-  if (!hasShareIntent && !sharedImageUri) {
+  if (!hasShareIntent && !sharedImageUri && !sharedText) {
     return (
       <View style={styles.container}>
         <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
@@ -91,8 +95,13 @@ export default function ShareScreen() {
   }
 
   const handleSelectProject = (project) => {
+    // Reset BEFORE navigating: a lingering hasShareIntent makes the
+    // _layout gate bounce the user back to this screen on re-renders.
+    resetShareIntent();
     if (sharedImageUri) {
       router.replace(`/project/${project.id}?sharedImage=${encodeURIComponent(sharedImageUri)}`);
+    } else if (sharedText) {
+      router.replace(`/project/${project.id}?sharedText=${encodeURIComponent(sharedText)}`);
     } else {
       router.replace(`/project/${project.id}`);
     }
@@ -111,13 +120,21 @@ export default function ShareScreen() {
         </View>
       </Animated.View>
 
-      {/* Shared Image Preview */}
+      {/* Shared Image / Text Preview */}
       {sharedImageUri && (
         <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.imagePreview}>
           <Image source={{ uri: sharedImageUri }} style={styles.previewImage} resizeMode="cover" />
           <View style={styles.previewInfo}>
             <IconButton icon="image" iconColor={theme.colors.primary} size={18} style={{ margin: 0 }} />
             <Text style={styles.previewText} numberOfLines={1}>Receipt image attached</Text>
+          </View>
+        </Animated.View>
+      )}
+      {!sharedImageUri && sharedText && (
+        <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.imagePreview}>
+          <View style={styles.previewInfo}>
+            <IconButton icon="text-box-outline" iconColor={theme.colors.primary} size={18} style={{ margin: 0 }} />
+            <Text style={styles.previewText} numberOfLines={2}>{sharedText}</Text>
           </View>
         </Animated.View>
       )}

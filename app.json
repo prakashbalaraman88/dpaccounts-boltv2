@@ -17,7 +17,6 @@
     },
     "android": {
       "package": "com.ledge.accounts",
-      "softwareKeyboardLayoutMode": "adjustResize",
       "adaptiveIcon": {
         "backgroundColor": "#050505",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -39,7 +38,8 @@
         "expo-share-intent",
         {
           "androidIntentFilters": [
-            "image/*"
+            "image/*",
+            "text/*"
           ],
           "androidMultiIntentFilters": [
             "image/*"

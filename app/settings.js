@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, StyleSheet, Pressable, Linking, ScrollView } from 'react-native';
+import { View, StyleSheet, Pressable, Linking, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { Text, TextInput, IconButton } from 'react-native-paper';
 import Animated, {
   FadeIn,
@@ -82,7 +82,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
       {/* Header */}
       <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
         <Pressable
@@ -266,7 +266,7 @@ export default function SettingsScreen() {
           </Pressable>
         </Animated.View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

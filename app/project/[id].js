@@ -79,7 +79,7 @@ function CategoryItem({ category, onPress }) {
 }
 
 export default function ProjectChat() {
-  const { id, sharedImage } = useLocalSearchParams();
+  const { id, sharedImage, sharedText } = useLocalSearchParams();
   const router = useRouter();
   const projectId = parseInt(id);
   const flatListRef = useRef(null);
@@ -204,6 +204,21 @@ export default function ProjectChat() {
       })();
     }
   }, [sharedImage, currentProject]);
+
+  // Auto-process shared TEXT (GPay and many apps share text, not images)
+  const sharedTextProcessed = useRef(false);
+  useEffect(() => {
+    if (sharedText && currentProject && !sharedTextProcessed.current && !isSending) {
+      sharedTextProcessed.current = true;
+      const text = decodeURIComponent(String(sharedText));
+      (async () => {
+        setIsSending(true);
+        await addMessage(projectId, 'text', text, null, 'user');
+        await processWithAI(text);
+        setIsSending(false);
+      })();
+    }
+  }, [sharedText, currentProject]);
 
   const processWithAI = async (content, imageUri = null, receiptUrl = null) => {
     try {
@@ -454,9 +469,9 @@ export default function ProjectChat() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      // Android resizes the window itself (softwareKeyboardLayoutMode:
-      // adjustResize) — adding KAV padding on top causes double-jumps.
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      // SDK 55 is edge-to-edge: the window never resizes for the keyboard
+      // (adjustResize is gone), so KAV padding must make room on Android too.
+      behavior="padding"
     >
       {/* Header */}
       <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
