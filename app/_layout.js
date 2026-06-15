@@ -118,7 +118,7 @@ function RootLayoutInner() {
   const loadProjects = useAppStore((s) => s.loadProjects);
   const loadSettings = useAppStore((s) => s.loadSettings);
   const { session, profile, isLoading, initialize } = useAuthStore();
-  const { hasShareIntent } = useShareIntentContext();
+  const { hasShareIntent, shareIntent, error: shareError } = useShareIntentContext();
   const router = useRouter();
   const segments = useSegments();
 
@@ -176,6 +176,24 @@ function RootLayoutInner() {
           animationDuration: 250,
         }}
       />
+      {/* TEMP share-intent diagnostic overlay — remove after debugging */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', top: 38, left: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.92)', borderColor: '#C9A87C', borderWidth: 1, borderRadius: 8, padding: 8 }}
+      >
+        <Text style={{ color: '#C9A87C', fontSize: 11, fontWeight: '700' }}>
+          SHARE DEBUG · route: /{segments.join('/') || '(home)'}
+        </Text>
+        <Text style={{ color: '#E8E8E8', fontSize: 11, fontFamily: 'monospace' }}>
+          hasShareIntent={String(hasShareIntent)}  files={shareIntent?.files?.length ?? 0}  text={shareIntent?.text ? 'YES' : 'no'}
+        </Text>
+        <Text style={{ color: '#FB7185', fontSize: 10, fontFamily: 'monospace' }} numberOfLines={2}>
+          error: {shareError ? String(shareError) : 'none'}
+        </Text>
+        <Text style={{ color: '#888888', fontSize: 9, fontFamily: 'monospace' }} numberOfLines={3}>
+          {JSON.stringify(shareIntent?.files?.[0] || { text: shareIntent?.text || null }).slice(0, 240)}
+        </Text>
+      </View>
     </View>
   );
 }
