@@ -4,6 +4,7 @@ import { Text, TextInput } from 'react-native-paper';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { theme } from '../src/constants/theme';
 import { useAuthStore } from '../src/stores/authStore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function LedgeLogo({ size = 56 }) {
   return (
@@ -14,6 +15,7 @@ function LedgeLogo({ size = 56 }) {
 }
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -51,7 +53,7 @@ export default function LoginScreen() {
       behavior="padding"
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(40, insets.top + 24), paddingBottom: Math.max(40, insets.bottom + 24) }]}
         keyboardShouldPersistTaps="handled"
         bounces={false}
       >

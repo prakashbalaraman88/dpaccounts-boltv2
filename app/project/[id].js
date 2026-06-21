@@ -25,21 +25,28 @@ import Animated, {
   interpolate,
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { theme, formatRupees, CATEGORIES } from '../../src/constants/theme';
 import { formatTime } from '../../src/utils/datetime';
 import { prepareReceiptImage } from '../../src/utils/images';
+import { impactLight, impactMedium, notificationSuccess, notificationError } from '../../src/utils/haptics';
 import { useAppStore } from '../../src/stores/appStore';
 import { analyzeMessage } from '../../src/services/ai';
 import { uploadReceiptImage } from '../../src/services/supabase';
 
 // Animated action button - uses Animated.View + Pressable
-function ActionButton({ icon, onPress, color, size = 22, style }) {
+function ActionButton({ icon, onPress, color, size = 22, style, haptic = true }) {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
+
+  const handlePress = () => {
+    if (haptic) impactLight();
+    onPress?.();
+  };
 
   return (
     <Animated.View style={[animStyle]}>
@@ -47,7 +54,7 @@ function ActionButton({ icon, onPress, color, size = 22, style }) {
         style={[styles.actionButton, style]}
         onPressIn={() => { scale.value = withSpring(0.88, { damping: 12, stiffness: 200 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 200 }); }}
-        onPress={onPress}
+        onPress={handlePress}
       >
         <IconButton icon={icon} iconColor={color || theme.colors.onSurfaceVariant} size={size} style={{ margin: 0 }} />
       </Pressable>
@@ -62,13 +69,18 @@ function CategoryItem({ category, onPress }) {
     transform: [{ scale: scale.value }],
   }));
 
+  const handlePress = () => {
+    impactLight();
+    onPress?.(category);
+  };
+
   return (
     <Animated.View style={animStyle}>
       <Pressable
         style={styles.categoryItem}
         onPressIn={() => { scale.value = withSpring(0.96, { damping: 15, stiffness: 200 }); }}
       onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 200 }); }}
-      onPress={() => onPress(category)}
+      onPress={handlePress}
     >
       <View style={styles.categoryIconWrap}>
         <IconButton icon={category.icon} iconColor={theme.colors.primary} size={20} style={{ margin: 0 }} />
@@ -83,6 +95,7 @@ function CategoryItem({ category, onPress }) {
 export default function ProjectChat() {
   const { id, sharedImage, sharedText } = useLocalSearchParams();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const projectId = parseInt(id);
   const flatListRef = useRef(null);
 
@@ -148,97 +161,133 @@ export default function ProjectChat() {
   // latest messages instead of cutting the chat off after 10 rows.
   const chatData = useMemo(() => [...messages].reverse(), [messages]);
 
+  // Keep the chat pinned to the latest user message so the user sees their
+  // own sends and the AI reply without manual scrolling.
+  useEffect(() => {
+    if (messages.length > 0 && flatListRef.current) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.sender === 'user') {
+        flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+      }
+    }
+  }, [messages.length]);
+
+  // Track which sharedImage/sharedText params we have already processed so
+  // re-renders and navigation back-and-forth do not re-trigger the pipeline,
+  // while still allowing a brand-new share (different param value) to run.
+  const lastSharedImage = useRef(null);
+  const lastSharedText = useRef(null);
+
   // Auto-process shared image from share intent.
   // Fully fenced: in release builds an unhandled rejection here kills the
   // whole app, so every step is caught and surfaced as a chat message.
-  const sharedImageProcessed = useRef(false);
   useEffect(() => {
-    if (sharedImage && currentProject && !sharedImageProcessed.current && !isSending) {
-      sharedImageProcessed.current = true;
-      (async () => {
-        setIsSending(true);
+    if (!sharedImage || !currentProject || isSending) return;
+    if (lastSharedImage.current === sharedImage) return;
+    lastSharedImage.current = sharedImage;
+
+    setIsSending(true);
+    (async () => {
+      try {
+        let imageUri;
         try {
-          let imageUri;
-          try {
-            imageUri = decodeURIComponent(String(sharedImage));
-          } catch {
-            imageUri = String(sharedImage);
-          }
-          if (imageUri.startsWith('/')) {
-            imageUri = 'file://' + imageUri;
-          }
-
-          // content:// URIs (Android share) → copy into our cache first
-          let readPath = imageUri;
-          if (imageUri.startsWith('content://')) {
-            const cachePath = FileSystem.cacheDirectory + 'shared_receipt_' + Date.now() + '.jpg';
-            await FileSystem.copyAsync({ from: imageUri, to: cachePath });
-            readPath = cachePath;
-          }
-
-          // Downscale to a small JPEG — full-size screenshots OOM-crash
-          // mid-range phones when base64'd
-          const prepared = await prepareReceiptImage(readPath);
-          const analysisUri = prepared.dataUri || readPath;
-
-          // Upload runs CONCURRENTLY with the AI call — its URL is only
-          // needed when the user saves the category, seconds from now.
-          const uploadPromise = storeReceipt(analysisUri);
-          const messageId = await addMessage(projectId, 'image', 'Shared receipt image', prepared.uri, 'user');
-          uploadPromise
-            .then((url) => { if (url && url !== prepared.uri) updateMessageImage(messageId, projectId, url); })
-            .catch(() => {});
-          await processWithAI(
-            'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
-            analysisUri,
-            uploadPromise
-          );
-        } catch (e) {
-          console.error('Shared image processing failed:', e);
-          await addMessage(
-            projectId, 'text',
-            `Could not process the shared image (${e?.message || 'unknown error'}). Try picking it with the gallery button instead.`,
-            null, 'system'
-          ).catch(() => {});
-        } finally {
-          setIsSending(false);
+          imageUri = decodeURIComponent(String(sharedImage));
+        } catch {
+          imageUri = String(sharedImage);
         }
-      })();
-    }
-  }, [sharedImage, currentProject]);
+        if (imageUri.startsWith('/')) {
+          imageUri = 'file://' + imageUri;
+        }
+
+        // content:// URIs (Android share) → copy into our cache first
+        let readPath = imageUri;
+        if (imageUri.startsWith('content://')) {
+          const cachePath = FileSystem.cacheDirectory + 'shared_receipt_' + Date.now() + '.jpg';
+          await FileSystem.copyAsync({ from: imageUri, to: cachePath });
+          const info = await FileSystem.getInfoAsync(cachePath);
+          if (!info.exists || info.size === 0) {
+            throw new Error('Shared image could not be copied from the originating app. Try sharing again or pick from gallery.');
+          }
+          readPath = cachePath;
+        }
+
+        // Downscale to a small JPEG — full-size screenshots OOM-crash
+        // mid-range phones when base64'd
+        const prepared = await prepareReceiptImage(readPath);
+        if (!prepared.dataUri) {
+          throw new Error('Could not read the shared image. It may be corrupted or no longer accessible.');
+        }
+        const analysisUri = prepared.dataUri;
+
+        // Upload runs CONCURRENTLY with the AI call — its URL is only
+        // needed when the user saves the category, seconds from now.
+        const uploadPromise = storeReceipt(analysisUri);
+        const messageId = await addMessage(projectId, 'image', 'Shared receipt image', prepared.uri, 'user');
+        uploadPromise
+          .then((url) => { if (url && url !== prepared.uri) updateMessageImage(messageId, projectId, url); })
+          .catch(() => {});
+        await processWithAI(
+          'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
+          analysisUri,
+          uploadPromise
+        );
+      } catch (e) {
+        console.error('Shared image processing failed:', e);
+        await addMessage(
+          projectId, 'text',
+          `Could not process the shared image (${e?.message || 'unknown error'}). Try picking it with the gallery button instead.`,
+          null, 'system'
+        ).catch(() => {});
+      } finally {
+        setIsSending(false);
+      }
+    })();
+  }, [sharedImage, currentProject, isSending, projectId]);
 
   // Auto-process shared TEXT (GPay and many apps share text, not images)
-  const sharedTextProcessed = useRef(false);
   useEffect(() => {
-    if (sharedText && currentProject && !sharedTextProcessed.current && !isSending) {
-      sharedTextProcessed.current = true;
-      (async () => {
-        setIsSending(true);
+    if (!sharedText || !currentProject || isSending) return;
+    if (lastSharedText.current === sharedText) return;
+    lastSharedText.current = sharedText;
+
+    setIsSending(true);
+    (async () => {
+      try {
+        let text;
         try {
-          let text;
-          try {
-            text = decodeURIComponent(String(sharedText));
-          } catch {
-            text = String(sharedText);
-          }
-          await addMessage(projectId, 'text', text, null, 'user');
-          await processWithAI(text);
-        } catch (e) {
-          console.error('Shared text processing failed:', e);
-        } finally {
-          setIsSending(false);
+          text = decodeURIComponent(String(sharedText));
+        } catch {
+          text = String(sharedText);
         }
-      })();
-    }
-  }, [sharedText, currentProject]);
+        await addMessage(projectId, 'text', text, null, 'user');
+        await processWithAI(text);
+      } catch (e) {
+        console.error('Shared text processing failed:', e);
+        await addMessage(
+          projectId, 'text',
+          `Could not process the shared text (${e?.message || 'unknown error'}).`,
+          null, 'system'
+        ).catch(() => {});
+      } finally {
+        setIsSending(false);
+      }
+    })();
+  }, [sharedText, currentProject, isSending, projectId]);
 
   // receiptUrl may be a string OR a pending upload Promise — it's resolved
   // at category-save time so the AI never waits on the upload.
+  const AI_TIMEOUT_MS = 30000;
   const processWithAI = async (content, imageUri = null, receiptUrl = null) => {
     try {
       // analyzeMessage parses simple text locally and only needs the API
-      // key for receipts and ambiguous phrasing.
-      const result = await analyzeMessage(aiApiKey, content, imageUri);
+      // key for receipts and ambiguous phrasing. Add an outer timeout so a
+      // stuck image fetch or slow model never leaves the UI in "Analyzing…".
+      const result = await Promise.race([
+        analyzeMessage(aiApiKey, content, imageUri),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('AI analysis timed out. Please try again.')), AI_TIMEOUT_MS)
+        ),
+      ]);
 
       if (result.isTransaction) {
         const vendorInfo = result.vendor ? `\nVendor: ${result.vendor}` : '';
@@ -260,7 +309,15 @@ export default function ProjectChat() {
       }
     } catch (error) {
       console.error('AI analysis error:', error);
-      await addMessage(projectId, 'text', 'AI analysis failed. Please check the OpenRouter API key in Settings or try again.', null, 'system');
+      const isTimeout = error?.message?.includes('timed out');
+      const isNoKey = !aiApiKey;
+      let errorText = 'AI analysis failed. Please check the OpenRouter API key in Settings or try again.';
+      if (isNoKey) {
+        errorText = 'Receipt image analysis needs an OpenRouter API key — ask your admin to set it in Settings.';
+      } else if (isTimeout) {
+        errorText = 'AI analysis timed out. The free-tier model may be busy — please try again in a moment.';
+      }
+      await addMessage(projectId, 'text', errorText, null, 'system');
     }
   };
 
@@ -279,6 +336,7 @@ export default function ProjectChat() {
     const text = inputText.trim();
     if (!text || isSending) return;
 
+    impactMedium();
     sendScale.value = withSpring(0.7, { damping: 8 });
     setTimeout(() => { sendScale.value = withSpring(1, { damping: 8 }); }, 150);
 
@@ -294,12 +352,41 @@ export default function ProjectChat() {
     }
   };
 
-  // Shared pipeline for picked/captured images: downscale → upload ∥ analyze
+  // Normalize a picked/captured URI. Some Android galleries return content://
+  // URIs that expo-image-manipulator cannot always read directly, so we copy
+  // them into our cache first (same strategy as the share-intent path).
+  const normalizePickedUri = async (uri) => {
+    if (!uri) throw new Error('No image selected');
+    let normalized = uri;
+    if (normalized.startsWith('/')) {
+      normalized = 'file://' + normalized;
+    }
+    if (normalized.startsWith('content://')) {
+      const cachePath = FileSystem.cacheDirectory + 'picked_receipt_' + Date.now() + '.jpg';
+      await FileSystem.copyAsync({ from: normalized, to: cachePath });
+      const info = await FileSystem.getInfoAsync(cachePath);
+      if (!info.exists || info.size === 0) {
+        throw new Error('Could not read the selected image from the gallery.');
+      }
+      normalized = cachePath;
+    }
+    return normalized;
+  };
+
+  // Shared pipeline for picked/captured images: copy → downscale → upload ∥ analyze
   const processPickedImage = async (asset, label) => {
+    if (!asset?.uri) {
+      await addMessage(projectId, 'text', 'No image was selected. Please try again.', null, 'system').catch(() => {});
+      return;
+    }
     setIsSending(true);
     try {
-      const prepared = await prepareReceiptImage(asset.uri);
-      const analysisUri = prepared.dataUri || asset.uri;
+      const normalizedUri = await normalizePickedUri(asset.uri);
+      const prepared = await prepareReceiptImage(normalizedUri);
+      if (!prepared.dataUri) {
+        throw new Error('Could not prepare image for analysis');
+      }
+      const analysisUri = prepared.dataUri;
       const uploadPromise = storeReceipt(analysisUri);
       const messageId = await addMessage(projectId, 'image', label, prepared.uri, 'user');
       uploadPromise
@@ -314,7 +401,7 @@ export default function ProjectChat() {
       console.error('Image processing failed:', e);
       await addMessage(
         projectId, 'text',
-        `Could not process the image (${e?.message || 'unknown error'}).`,
+        `Could not process the image (${e?.message || 'unknown error'}). Try again or type the details.`,
         null, 'system'
       ).catch(() => {});
     } finally {
@@ -323,27 +410,55 @@ export default function ProjectChat() {
   };
 
   const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.9,
-    });
-    if (!result.canceled && result.assets[0]) {
-      await processPickedImage(result.assets[0], 'Receipt image');
+    impactLight();
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        await addMessage(
+          projectId, 'text',
+          'Gallery permission is needed to attach receipt images. You can enable it in app settings.',
+          null, 'system'
+        ).catch(() => {});
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        await processPickedImage(result.assets[0], 'Receipt image');
+      }
+    } catch (e) {
+      console.error('Gallery picker failed:', e);
+      await addMessage(projectId, 'text', `Gallery picker failed: ${e?.message || 'unknown error'}`, null, 'system').catch(() => {});
     }
   };
 
   const handleCameraCapture = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return;
-
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.9 });
-    if (!result.canceled && result.assets[0]) {
-      await processPickedImage(result.assets[0], 'Receipt photo');
+    impactLight();
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        await addMessage(
+          projectId, 'text',
+          'Camera permission is needed to capture receipt photos. You can enable it in app settings.',
+          null, 'system'
+        ).catch(() => {});
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.9 });
+      if (!result.canceled && result.assets?.[0]) {
+        await processPickedImage(result.assets[0], 'Receipt photo');
+      }
+    } catch (e) {
+      console.error('Camera capture failed:', e);
+      await addMessage(projectId, 'text', `Camera capture failed: ${e?.message || 'unknown error'}`, null, 'system').catch(() => {});
     }
   };
 
   const handleCategorySelect = async (category) => {
-    if (!pendingTransaction) return;
+    if (!pendingTransaction || isSending) return;
+    impactMedium();
 
     // The Incoming/Expense toggle is the user's correction of the AI's
     // detection — the ACTIVE TAB decides the saved type, not the original.
@@ -363,19 +478,33 @@ export default function ProjectChat() {
       'bot'
     );
 
-    await addTransaction(
-      projectId,
-      messageId,
-      txType,
-      pendingTransaction.amount,
-      category.id,
-      category.label,
-      pendingTransaction.description,
-      {
-        vendor: pendingTransaction.vendor || '',
-        receiptUri,
-      }
-    );
+    setIsSending(true);
+    try {
+      await addTransaction(
+        projectId,
+        messageId,
+        txType,
+        pendingTransaction.amount,
+        category.id,
+        category.label,
+        pendingTransaction.description,
+        {
+          vendor: pendingTransaction.vendor || '',
+          receiptUri,
+        }
+      );
+      notificationSuccess();
+    } catch (e) {
+      console.error('Save transaction failed:', e);
+      notificationError();
+      await addMessage(
+        projectId, 'text',
+        `Could not save transaction: ${e?.message || 'unknown error'}. Tap the amount to retry.`,
+        null, 'system'
+      ).catch(() => {});
+    } finally {
+      setIsSending(false);
+    }
 
     setPendingTransaction(null);
     setShowCategoryModal(false);
@@ -396,14 +525,21 @@ export default function ProjectChat() {
     if (!editTxn) return;
     const amount = parseFloat(editTxnAmount);
     if (!isFinite(amount) || amount <= 0) return;
-    await updateTransaction(editTxn.id, projectId, {
-      type: editTxnType,
-      amount,
-      category_id: category.id,
-      category_label: category.label,
-      vendor: editTxnVendor.trim(),
-    });
-    setEditTxn(null);
+    impactLight();
+    try {
+      await updateTransaction(editTxn.id, projectId, {
+        type: editTxnType,
+        amount,
+        category_id: category.id,
+        category_label: category.label,
+        vendor: editTxnVendor.trim(),
+      });
+      notificationSuccess();
+      setEditTxn(null);
+    } catch (e) {
+      notificationError();
+      console.error('Update transaction failed:', e);
+    }
   };
 
   const handleTxnDelete = async () => {
@@ -411,8 +547,14 @@ export default function ProjectChat() {
       setConfirmTxnDelete(true);
       return;
     }
-    await deleteTransaction(editTxn.id, projectId);
-    setEditTxn(null);
+    impactHeavy();
+    try {
+      await deleteTransaction(editTxn.id, projectId);
+      setEditTxn(null);
+    } catch (e) {
+      notificationError();
+      console.error('Delete transaction failed:', e);
+    }
   };
 
   const handleProjectDelete = async () => {
@@ -420,9 +562,15 @@ export default function ProjectChat() {
       setConfirmProjectDelete(true);
       return;
     }
-    await deleteProject(projectId);
-    setShowEditModal(false);
-    router.replace('/');
+    impactHeavy();
+    try {
+      await deleteProject(projectId);
+      setShowEditModal(false);
+      router.replace('/');
+    } catch (e) {
+      notificationError();
+      console.error('Delete project failed:', e);
+    }
   };
 
   const renderMessage = ({ item, index }) => {
@@ -503,7 +651,7 @@ export default function ProjectChat() {
       behavior="padding"
     >
       {/* Header */}
-      <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
+      <Animated.View entering={FadeIn.duration(400)} style={[styles.header, { paddingTop: Math.max(12, insets.top + 8) }]}>
         <ActionButton
           icon="arrow-left"
           onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
@@ -601,7 +749,7 @@ export default function ProjectChat() {
       )}
 
       {/* Input Bar */}
-      <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.inputBar}>
+      <Animated.View entering={FadeInDown.delay(200).duration(400)} style={[styles.inputBar, { paddingBottom: Math.max(8, insets.bottom + 8) }]}>
         <View style={styles.inputActions}>
           <ActionButton icon="camera" onPress={handleCameraCapture} color={theme.colors.secondary} size={20} />
           <ActionButton icon="image" onPress={handlePickImage} color={theme.colors.secondary} size={20} />
@@ -660,7 +808,7 @@ export default function ProjectChat() {
             setShowCategoryModal(false);
             setPendingTransaction(null);
           }}
-          contentContainerStyle={styles.categoryModal}
+          contentContainerStyle={[styles.categoryModal, { paddingBottom: Math.max(36, insets.bottom + 20) }]}
           style={styles.categoryModalOverlay}
         >
           <View style={styles.modalHandle} />
@@ -761,8 +909,9 @@ export default function ProjectChat() {
           onDismiss={() => setShowEditModal(false)}
           contentContainerStyle={[
             styles.editModal,
+            { paddingBottom: Math.max(36, insets.bottom + 20) },
             keyboardHeight > 0 && {
-              marginBottom: keyboardHeight,
+              marginBottom: keyboardHeight - insets.bottom,
               maxHeight: Dimensions.get('window').height - keyboardHeight - 80,
             },
           ]}
@@ -866,7 +1015,7 @@ export default function ProjectChat() {
         <Modal
           visible={!!editTxn}
           onDismiss={() => setEditTxn(null)}
-          contentContainerStyle={styles.categoryModal}
+          contentContainerStyle={[styles.categoryModal, { paddingBottom: Math.max(36, insets.bottom + 20) }]}
           style={styles.categoryModalOverlay}
         >
           <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
@@ -1004,11 +1153,12 @@ const styles = StyleSheet.create({
   headerBalance: {
     alignItems: 'flex-end',
     backgroundColor: theme.colors.surfaceElevated,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: theme.colors.outline,
+    maxWidth: 110,
   },
   headerBalanceLabel: {
     fontSize: 9,
@@ -1017,7 +1167,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   headerBalanceAmount: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     marginTop: 1,
   },
@@ -1069,7 +1219,8 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 24,
     flexGrow: 1,
   },
   messageBubbleWrapper: {

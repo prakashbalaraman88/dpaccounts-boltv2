@@ -1,0 +1,97 @@
+diff --git a/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt b/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
+index 0153c89..ad65969 100644
+--- a/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
++++ b/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
+@@ -142,7 +142,7 @@ class ExpoShareIntentModule : Module() {
+                 if (intent.action == Intent.ACTION_SEND) {
+                     val uri = intent.parcelable<Uri>(Intent.EXTRA_STREAM);
+                     if (uri != null) {
+-                        notifyShareIntent(mapOf( "files" to arrayOf(getFileInfo(uri), "type" to "file")))
++                        notifyShareIntent(mapOf( "files" to arrayOf(getFileInfo(uri)), "type" to "file"))
+                     } else {
+                         notifyError("empty uri for file sharing: " + intent.action)
+                     }
+diff --git a/node_modules/expo-share-intent/build/useShareIntent.js b/node_modules/expo-share-intent/build/useShareIntent.js
+index 1ab12c4..8d500f2 100644
+--- a/node_modules/expo-share-intent/build/useShareIntent.js
++++ b/node_modules/expo-share-intent/build/useShareIntent.js
+@@ -49,37 +49,6 @@ export default function useShareIntent(options = SHAREINTENT_OPTIONS_DEFAULT) {
+                 console.debug("useShareIntent[refresh] not a valid refresh url");
+         }
+     };
+-    useEffect(() => {
+-        if (options.disabled)
+-            return;
+-        options.debug &&
+-            console.debug("useShareIntent[mount]", getScheme(options), options);
+-        refreshShareIntent();
+-    }, [url, options.disabled]);
+-    /**
+-     * Handle application state (active, background, inactive)
+-     */
+-    useEffect(() => {
+-        if (options.disabled)
+-            return;
+-        const subscription = AppState.addEventListener("change", (nextAppState) => {
+-            if (nextAppState === "active") {
+-                options.debug && console.debug("useShareIntent[active] refresh intent");
+-                refreshShareIntent();
+-            }
+-            else if (options.resetOnBackground !== false &&
+-                appState.current === "active" &&
+-                ["inactive", "background"].includes(nextAppState)) {
+-                options.debug &&
+-                    console.debug("useShareIntent[to-background] reset intent");
+-                resetShareIntent();
+-            }
+-            appState.current = nextAppState;
+-        });
+-        return () => {
+-            subscription.remove();
+-        };
+-    }, [url, shareIntent, options.disabled]);
+     /**
+      * Detect Native Module response
+      */
+@@ -115,6 +84,41 @@ export default function useShareIntent(options = SHAREINTENT_OPTIONS_DEFAULT) {
+             errorSubscription.remove();
+         };
+     }, [options.disabled]);
++    /**
++     * Call native module only after listeners are attached.
++     * This prevents missing the initial share-intent event on Android cold start.
++     */
++    useEffect(() => {
++        if (options.disabled || !isReady)
++            return;
++        options.debug &&
++            console.debug("useShareIntent[mount]", getScheme(options), options);
++        refreshShareIntent();
++    }, [url, isReady, options.disabled]);
++    /**
++     * Handle application state (active, background, inactive)
++     */
++    useEffect(() => {
++        if (options.disabled)
++            return;
++        const subscription = AppState.addEventListener("change", (nextAppState) => {
++            if (nextAppState === "active") {
++                options.debug && console.debug("useShareIntent[active] refresh intent");
++                refreshShareIntent();
++            }
++            else if (options.resetOnBackground !== false &&
++                appState.current === "active" &&
++                ["inactive", "background"].includes(nextAppState)) {
++                options.debug &&
++                    console.debug("useShareIntent[to-background] reset intent");
++                resetShareIntent();
++            }
++            appState.current = nextAppState;
++        });
++        return () => {
++            subscription.remove();
++        };
++    }, [url, shareIntent, options.disabled]);
+     return {
+         isReady,
+         hasShareIntent: isValueAvailable(shareIntent),

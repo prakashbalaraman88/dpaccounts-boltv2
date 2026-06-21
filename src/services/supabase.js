@@ -27,10 +27,28 @@ export const isSupabaseConfigured = () => true;
  * @param {number} projectId - Project ID for folder organization
  * @returns {string} Public URL of the uploaded image
  */
+const UPLOAD_FETCH_TIMEOUT_MS = 20000;
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function uploadReceiptImage(imageUri, projectId) {
   // fetch() handles data:, file://, blob:, and https: URIs alike
-  const response = await fetch(imageUri);
+  const response = await fetchWithTimeout(imageUri, {}, UPLOAD_FETCH_TIMEOUT_MS);
+  if (!response.ok) {
+    throw new Error(`Failed to read image for upload: ${response.status} ${response.statusText}`);
+  }
   const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('Image file is empty or unreadable');
+  }
 
   const contentType = blob.type || 'image/jpeg';
   const ext = (contentType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');

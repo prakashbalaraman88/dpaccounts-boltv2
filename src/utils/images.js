@@ -42,14 +42,9 @@ async function manipulate(uri) {
  *   dataUri  — data:image/jpeg;base64 payload for the AI call (null on failure)
  */
 export async function prepareReceiptImage(sourceUri) {
-  try {
-    const result = await manipulate(sourceUri);
-    return {
-      uri: result.uri,
-      dataUri: result.base64 ? `data:image/jpeg;base64,${result.base64}` : null,
-    };
-  } catch (e) {
-    console.warn('Image downscale failed, using original:', e?.message);
-    return { uri: sourceUri, dataUri: sourceUri.startsWith('data:') ? sourceUri : null };
-  }
+  const result = await manipulate(sourceUri);
+  return {
+    uri: result.uri,
+    dataUri: result.base64 ? `data:image/jpeg;base64,${result.base64}` : null,
+  };
 }

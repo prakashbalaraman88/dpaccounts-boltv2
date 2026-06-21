@@ -17,10 +17,12 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, formatRupees } from '../src/constants/theme';
 import { formatRelativeDay } from '../src/utils/datetime';
 import { useAppStore } from '../src/stores/appStore';
 import { useAuthStore } from '../src/stores/authStore';
+import { impactLight, impactMedium, notificationSuccess } from '../src/utils/haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -110,6 +112,11 @@ function QuickAction({ icon, label, sublabel, onPress, delay = 0, color }) {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
+  const handlePress = () => {
+    impactLight();
+    onPress?.();
+  };
+
   return (
     <Animated.View
       entering={FadeInDown.delay(delay).springify().damping(18).stiffness(120)}
@@ -119,7 +126,7 @@ function QuickAction({ icon, label, sublabel, onPress, delay = 0, color }) {
         style={styles.quickActionCard}
         onPressIn={() => { scale.value = withSpring(0.95, { damping: 12, stiffness: 300 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
-        onPress={onPress}
+        onPress={handlePress}
       >
         <View style={[styles.quickActionIcon, color && { backgroundColor: color }]}>
           <IconButton icon={icon} iconColor="#F0F0F0" size={20} style={{ margin: 0 }} />
@@ -138,13 +145,17 @@ function QuickAction({ icon, label, sublabel, onPress, delay = 0, color }) {
 function NavButton({ icon, label, onPress, isActive = false }) {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const handlePress = () => {
+    if (!isActive) impactLight();
+    onPress?.();
+  };
   return (
     <Animated.View style={animStyle}>
       <Pressable
         style={styles.navButton}
         onPressIn={() => { scale.value = withSpring(0.88, { damping: 12, stiffness: 250 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 250 }); }}
-        onPress={onPress}
+        onPress={handlePress}
       >
         <IconButton
           icon={icon}
@@ -162,6 +173,7 @@ function NavButton({ icon, label, onPress, isActive = false }) {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { projects, loadProjects, createProject } = useAppStore();
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const [showNewProject, setShowNewProject] = useState(false);
@@ -199,8 +211,10 @@ export default function HomeScreen() {
 
   const handleCreateProject = async () => {
     if (!clientName.trim() || !projectName.trim()) return;
+    impactMedium();
     try {
       const id = await createProject(clientName.trim(), projectName.trim(), '', parseFloat(budget) || 0);
+      notificationSuccess();
       setShowNewProject(false);
       setClientName('');
       setProjectName('');
@@ -334,7 +348,7 @@ export default function HomeScreen() {
   );
 
   const ListHeader = () => (
-    <View style={styles.listHeader}>
+    <View style={[styles.listHeader, { paddingTop: Math.max(12, insets.top + 8) }]}>
       <TopHeader />
       <BalanceCard />
       <QuickActions />
@@ -372,7 +386,7 @@ export default function HomeScreen() {
       />
 
       {/* ---- Bottom Navigation ---- */}
-      <Animated.View entering={FadeInUp.delay(400).springify().damping(20)} style={styles.bottomNav}>
+      <Animated.View entering={FadeInUp.delay(400).springify().damping(20)} style={[styles.bottomNav, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
         <NavButton icon="home-variant" label="Home" isActive onPress={() => {}} />
         <NavButton icon="view-dashboard-outline" label="Dashboard" onPress={() => router.push('/dashboard')} />
 
@@ -380,7 +394,7 @@ export default function HomeScreen() {
         <View style={styles.fabContainer}>
           <Pressable
             style={styles.fabButton}
-            onPress={() => setShowNewProject(true)}
+            onPress={() => { impactMedium(); setShowNewProject(true); }}
           >
             <IconButton icon="plus" iconColor="#080808" size={26} style={{ margin: 0 }} />
           </Pressable>
@@ -397,8 +411,9 @@ export default function HomeScreen() {
           onDismiss={() => setShowNewProject(false)}
           contentContainerStyle={[
             styles.modal,
+            { paddingBottom: Math.max(40, insets.bottom + 24) },
             keyboardHeight > 0 && {
-              marginBottom: keyboardHeight,
+              marginBottom: Math.max(0, keyboardHeight - insets.bottom),
               maxHeight: Dimensions.get('window').height - keyboardHeight - 80,
             },
           ]}
@@ -545,11 +560,9 @@ const styles = StyleSheet.create({
 
   // List
   listContent: {
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
-  listHeader: {
-    paddingTop: 48,
-  },
+  listHeader: {},
   emptyContainer: {
     flexGrow: 1,
   },

@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, FlatList, StyleSheet, Pressable, Image } from 'react-native';
 import { Text, IconButton } from 'react-native-paper';
+import * as FileSystem from 'expo-file-system';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -9,9 +10,11 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useShareIntentContext } from 'expo-share-intent';
 import { theme, formatRupees } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
+import { impactLight } from '../src/utils/haptics';
 
 function ProjectCard({ project, index, onPress }) {
   const scale = useSharedValue(1);
@@ -32,7 +35,7 @@ function ProjectCard({ project, index, onPress }) {
         style={styles.projectCard}
         onPressIn={() => { scale.value = withSpring(0.97, { damping: 15, stiffness: 200 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 200 }); }}
-        onPress={() => onPress(project)}
+        onPress={() => { impactLight(); onPress(project); }}
       >
         <View style={styles.projectAvatar}>
           <Text style={styles.projectAvatarText}>{getInitials(project.client_name)}</Text>
@@ -54,14 +57,42 @@ function ProjectCard({ project, index, onPress }) {
 
 export default function ShareScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const { projects, loadProjects } = useAppStore();
+  const [cachedImageUri, setCachedImageUri] = useState(null);
 
   useEffect(() => {
     loadProjects();
   }, []);
 
   const sharedImageUri = shareIntent?.files?.[0]?.path || null;
+
+  // Content:// URIs from payment apps can lose their temporary read permission
+  // if the activity lifecycle shifts. Copy into our cache as soon as we receive
+  // the share so the preview and the project screen always have a valid file.
+  useEffect(() => {
+    if (!sharedImageUri || !sharedImageUri.startsWith('content://')) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const cachePath = FileSystem.cacheDirectory + 'ledge_share_' + Date.now() + '.jpg';
+        await FileSystem.copyAsync({ from: sharedImageUri, to: cachePath });
+        const info = await FileSystem.getInfoAsync(cachePath);
+        if (cancelled) return;
+        if (info.exists && info.size > 0) {
+          setCachedImageUri(cachePath);
+        } else {
+          console.warn('Cached shared image is empty; falling back to original URI');
+        }
+      } catch (e) {
+        console.warn('Could not cache shared image, using original URI:', e?.message);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [sharedImageUri]);
   // GPay & co. often share plain text instead of an image
   const sharedText = !sharedImageUri
     ? shareIntent?.text || shareIntent?.webUrl || null
@@ -72,11 +103,13 @@ export default function ShareScreen() {
     router.replace('/');
   };
 
+  const imageUri = cachedImageUri || sharedImageUri;
+
   // If no share data, show empty state
-  if (!hasShareIntent && !sharedImageUri && !sharedText) {
+  if (!hasShareIntent && !imageUri && !sharedText) {
     return (
       <View style={styles.container}>
-        <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
+        <Animated.View entering={FadeIn.duration(400)} style={[styles.header, { paddingTop: Math.max(12, insets.top + 8) }]}>
           <Pressable onPress={handleClose} style={styles.closeButton}>
             <IconButton icon="close" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0 }} />
           </Pressable>
@@ -98,8 +131,8 @@ export default function ShareScreen() {
     // Reset BEFORE navigating: a lingering hasShareIntent makes the
     // _layout gate bounce the user back to this screen on re-renders.
     resetShareIntent();
-    if (sharedImageUri) {
-      router.replace(`/project/${project.id}?sharedImage=${encodeURIComponent(sharedImageUri)}`);
+    if (imageUri) {
+      router.replace(`/project/${project.id}?sharedImage=${encodeURIComponent(imageUri)}`);
     } else if (sharedText) {
       router.replace(`/project/${project.id}?sharedText=${encodeURIComponent(sharedText)}`);
     } else {
@@ -121,9 +154,9 @@ export default function ShareScreen() {
       </Animated.View>
 
       {/* Shared Image / Text Preview */}
-      {sharedImageUri && (
+      {imageUri && (
         <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.imagePreview}>
-          <Image source={{ uri: sharedImageUri }} style={styles.previewImage} resizeMode="cover" />
+          <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="cover" />
           <View style={styles.previewInfo}>
             <IconButton icon="image" iconColor={theme.colors.primary} size={18} style={{ margin: 0 }} />
             <Text style={styles.previewText} numberOfLines={1}>Receipt image attached</Text>
@@ -143,7 +176,7 @@ export default function ShareScreen() {
       <FlatList
         data={projects}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
         showsVerticalScrollIndicator={false}
         renderItem={({ item, index }) => (
           <ProjectCard project={item} index={index} onPress={handleSelectProject} />

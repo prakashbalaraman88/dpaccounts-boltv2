@@ -4,8 +4,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { ThemeProvider } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
-import { ActivityIndicator, View, Pressable, ScrollView } from 'react-native';
+import { ShareIntentProvider, useShareIntentContext, ShareIntentModule } from 'expo-share-intent';
+import { ActivityIndicator, View, Pressable, ScrollView, Platform } from 'react-native';
 import { Text } from 'react-native-paper';
 import { theme } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
@@ -118,7 +118,7 @@ function RootLayoutInner() {
   const loadProjects = useAppStore((s) => s.loadProjects);
   const loadSettings = useAppStore((s) => s.loadSettings);
   const { session, profile, isLoading, initialize } = useAuthStore();
-  const { hasShareIntent, shareIntent, error: shareError } = useShareIntentContext();
+  const { hasShareIntent, isReady: isShareIntentReady } = useShareIntentContext();
   const router = useRouter();
   const segments = useSegments();
 
@@ -158,7 +158,19 @@ function RootLayoutInner() {
     if (hasShareIntent && session && profile && !profile.must_change_password && segments[0] !== 'share') {
       router.replace('/share');
     }
-  }, [hasShareIntent, session, profile]);
+  }, [hasShareIntent, session, profile, segments]);
+
+  // Retry reading the native share intent after the JS listeners are ready.
+  // expo-share-intent can emit the event before the listener attaches on cold start.
+  useEffect(() => {
+    if (!isShareIntentReady || Platform.OS !== 'android') return;
+    const timer = setTimeout(() => {
+      if (!hasShareIntent) {
+        ShareIntentModule?.getShareIntent('');
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [isShareIntentReady, hasShareIntent]);
 
   // Show splash while checking auth
   if (isLoading) {
@@ -176,24 +188,7 @@ function RootLayoutInner() {
           animationDuration: 250,
         }}
       />
-      {/* TEMP share-intent diagnostic overlay — remove after debugging */}
-      <View
-        pointerEvents="none"
-        style={{ position: 'absolute', top: 38, left: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.92)', borderColor: '#C9A87C', borderWidth: 1, borderRadius: 8, padding: 8 }}
-      >
-        <Text style={{ color: '#C9A87C', fontSize: 11, fontWeight: '700' }}>
-          SHARE DEBUG · route: /{segments.join('/') || '(home)'}
-        </Text>
-        <Text style={{ color: '#E8E8E8', fontSize: 11, fontFamily: 'monospace' }}>
-          hasShareIntent={String(hasShareIntent)}  files={shareIntent?.files?.length ?? 0}  text={shareIntent?.text ? 'YES' : 'no'}
-        </Text>
-        <Text style={{ color: '#FB7185', fontSize: 10, fontFamily: 'monospace' }} numberOfLines={2}>
-          error: {shareError ? String(shareError) : 'none'}
-        </Text>
-        <Text style={{ color: '#888888', fontSize: 9, fontFamily: 'monospace' }} numberOfLines={3}>
-          {JSON.stringify(shareIntent?.files?.[0] || { text: shareIntent?.text || null }).slice(0, 240)}
-        </Text>
-      </View>
+
     </View>
   );
 }
@@ -202,7 +197,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <CrashGuard>
-        <ShareIntentProvider options={{ resetOnBackground: false }}>
+        <ShareIntentProvider options={{ resetOnBackground: false, debug: __DEV__ }}>
           <PaperProvider theme={theme}>
             <ThemeProvider value={navigationTheme}>
               <RootLayoutInner />

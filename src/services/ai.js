@@ -146,14 +146,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Image handling — convert any URI the app produces into a data URI
 // ---------------------------------------------------------------------------
 
+const IMAGE_FETCH_TIMEOUT_MS = 15000;
+
 async function toDataUri(imageUri) {
   if (!imageUri) return null;
   if (imageUri.startsWith('data:')) return imageUri;
 
   // fetch() handles file:// (iOS), blob:// (web), https://; content:// is
   // converted to a cached file by the caller before reaching here.
-  const response = await fetch(imageUri);
+  const response = await fetchWithTimeout(
+    imageUri,
+    {},
+    IMAGE_FETCH_TIMEOUT_MS
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to read image: ${response.status} ${response.statusText}`);
+  }
   const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('Image file is empty or unreadable');
+  }
   const mimeType = blob.type || 'image/jpeg';
   const base64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
