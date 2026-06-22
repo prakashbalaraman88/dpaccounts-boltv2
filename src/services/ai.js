@@ -1,44 +1,45 @@
-// AI transaction analyzer — OpenRouter (OpenAI-compatible) edition.
+// AI transaction analyzer — OpenRouter / WaveSpeed dual-provider edition.
 //
 // Strategy:
 //   1. Text-only messages run through the local rule engine (parser.js)
 //      first. High-confidence parses return instantly — no network, no
 //      rate limits, works offline.
-//   2. Ambiguous text and all receipt images go to OpenRouter using free
-//      Gemma 4 vision models, with automatic fallback between models and
-//      retry/backoff for the free tier's 429s.
+//   2. Ambiguous text and all receipt images go to the configured provider:
+//      - OpenRouter (sk-or-v1-... keys): free vision model chain with
+//        fallback and 429 backoff. Images are sent as base64 data URIs.
+//      - WaveSpeed (wsk_live_... keys): cheap pay-as-you-go models. Images
+//        must be publicly accessible URLs (the app uploads receipts to
+//        Supabase Storage and passes that URL).
 //   3. If the LLM fails entirely, a lower-confidence local parse (when
 //      available) is used so the user is never dead-blocked.
 //
-// The old Gemini service exposed analyzeMessage(apiKey, text, imageUri);
+// The old Gemini/OpenRouter service exposed analyzeMessage(apiKey, text, imageUri);
 // this module keeps the exact same signature.
 
 import { parseTransactionText } from './parser';
 import { CATEGORIES } from '../constants/theme';
 
-const BASE_URL = 'https://openrouter.ai/api/v1';
+const BASE_URL_OPENROUTER = 'https://openrouter.ai/api/v1';
+const BASE_URL_WAVESPEED = 'https://llm.wavespeed.ai/v1';
 
-// Primary + fallbacks. All free, all support image input. The NVIDIA model
-// rides a different upstream than the two Gemmas (Google AI Studio), so the
-// chain survives provider-wide free-tier congestion.
-export const MODEL_CHAIN = [
+// OpenRouter: primary + fallbacks. All free, all support image input.
+const OPENROUTER_MODEL_CHAIN = [
   'google/gemma-4-31b-it:free',
   'google/gemma-4-26b-a4b-it:free',
   'nvidia/nemotron-nano-12b-v2-vl:free',
 ];
 
-const MAX_ATTEMPTS_PER_MODEL = 2;
+// WaveSpeed: best-price models that worked in testing.
+// - deepseek-v3.2: very cheap, solid JSON following for text extraction.
+// - gemini-2.5-flash: cheap vision model; requires a public image URL.
+const WAVESPEED_TEXT_MODEL = 'deepseek/deepseek-v3.2';
+const WAVESPEED_VISION_MODEL = 'google/gemini-2.5-flash';
 
-// Images fail-fast: one attempt per model, tighter timeout, short backoff —
-// don't sit on a congested provider while two fallbacks idle. Receipts also
-// need fewer output tokens than free-form text replies.
+const MAX_ATTEMPTS_PER_MODEL = 2;
 const IMAGE_ATTEMPTS_PER_MODEL = 1;
 const IMAGE_TIMEOUT_MS = 15000;
-// Chat UX: a reply needs to land in seconds. Slow free-tier nodes get cut
-// off and the chain moves on (or degrades to the local result).
 const TIMEOUT_MS = 20000;
 
-// Confidence at or above which we trust the local parser and skip the LLM
 const LOCAL_FAST_PATH_CONFIDENCE = 0.85;
 
 const VALID_CATEGORY_IDS = new Set(
@@ -72,6 +73,10 @@ Examples:
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function isWaveSpeedKey(apiKey) {
+  return typeof apiKey === 'string' && apiKey.startsWith('wsk_');
+}
 
 function extractJson(rawText) {
   if (!rawText) return null;
@@ -113,7 +118,6 @@ function sanitizeResult(raw, source) {
   if (!VALID_CATEGORY_IDS.has(category)) {
     category = type === 'incoming' ? 'others_incoming' : 'others_expense';
   }
-  // Guard against the model picking a category from the wrong side
   const sideIds = new Set(CATEGORIES[type].map((c) => c.id));
   if (!sideIds.has(category)) {
     category = type === 'incoming' ? 'others_incoming' : 'others_expense';
@@ -144,6 +148,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
 // Image handling — convert any URI the app produces into a data URI
+// (kept for the OpenRouter path; WaveSpeed receives a public URL directly)
 // ---------------------------------------------------------------------------
 
 const IMAGE_FETCH_TIMEOUT_MS = 10000;
@@ -152,8 +157,6 @@ async function toDataUri(imageUri) {
   if (!imageUri) return null;
   if (imageUri.startsWith('data:')) return imageUri;
 
-  // fetch() handles file:// (iOS), blob:// (web), https://; content:// is
-  // converted to a cached file by the caller before reaching here.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
   try {
@@ -200,11 +203,11 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
   const maxAttempts = isImage ? IMAGE_ATTEMPTS_PER_MODEL : MAX_ATTEMPTS_PER_MODEL;
   const timeoutMs = isImage ? IMAGE_TIMEOUT_MS : TIMEOUT_MS;
 
-  for (const model of MODEL_CHAIN) {
+  for (const model of OPENROUTER_MODEL_CHAIN) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const resp = await fetchWithTimeout(
-          `${BASE_URL}/chat/completions`,
+          `${BASE_URL_OPENROUTER}/chat/completions`,
           {
             method: 'POST',
             headers: {
@@ -227,7 +230,6 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
         );
 
         if (resp.status === 429) {
-          // Free-tier saturation — brief backoff, then next attempt/model
           lastError = new Error('rate-limited (429)');
           await sleep(isImage ? 800 : 1500 * (attempt + 1));
           continue;
@@ -236,14 +238,12 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
         if (!resp.ok) {
           const body = await resp.text().catch(() => '');
           lastError = new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
-          // 4xx other than 429 won't improve on retry with the same model
           if (resp.status >= 400 && resp.status < 500) break;
           continue;
         }
 
         const data = await resp.json();
         const message = data?.choices?.[0]?.message || {};
-        // Some free providers return text under `reasoning` with empty content
         const rawText = message.content || message.reasoning || '';
         const parsed = extractJson(rawText);
         if (parsed) return { parsed, model };
@@ -259,15 +259,71 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
 }
 
 // ---------------------------------------------------------------------------
+// WaveSpeed call — single cheap model, no fallback
+// ---------------------------------------------------------------------------
+
+async function queryWaveSpeed(apiKey, messageText, imageUri) {
+  const isImage = Boolean(imageUri);
+  const model = isImage ? WAVESPEED_VISION_MODEL : WAVESPEED_TEXT_MODEL;
+  const timeoutMs = isImage ? IMAGE_TIMEOUT_MS : TIMEOUT_MS;
+
+  const userContent = isImage
+    ? [
+        { type: 'text', text: messageText },
+        { type: 'image_url', image_url: { url: imageUri } },
+      ]
+    : messageText;
+
+  const resp = await fetchWithTimeout(
+    `${BASE_URL_WAVESPEED}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: isImage ? 300 : 500,
+      }),
+    },
+    timeoutMs
+  );
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const message = data?.choices?.[0]?.message || {};
+  const rawText = message.content || message.reasoning || '';
+  const parsed = extractJson(rawText);
+  if (!parsed) {
+    throw new Error(`unparseable response: ${String(rawText).slice(0, 120)}`);
+  }
+  return { parsed, model };
+}
+
+// ---------------------------------------------------------------------------
 // Public API — same signature the screens already use
 // ---------------------------------------------------------------------------
 
 /**
  * Analyze a chat message (and optional receipt image) into a transaction.
  *
- * @param {string} apiKey   OpenRouter API key (sk-or-v1-...)
+ * @param {string} apiKey   OpenRouter (sk-or-v1-...) or WaveSpeed (wsk_...) key
  * @param {string} messageText
- * @param {string|null} imageUri  data:/file:/https: URI of a receipt image
+ * @param {string|null} imageUri  data:/file:/https: URI of a receipt image.
+ *                                For WaveSpeed vision this MUST be a public
+ *                                https:// URL (the app uploads to Supabase
+ *                                and passes the public URL).
  */
 export async function analyzeMessage(apiKey, messageText, imageUri = null) {
   const text = (messageText || '').trim();
@@ -277,10 +333,6 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
   if (local && local.isTransaction && local.confidence >= LOCAL_FAST_PATH_CONFIDENCE) {
     return local;
   }
-
-  // Confident NON-transactions ("hello", questions, quotes/estimates,
-  // pending dues) also answer instantly — burning a slow free-tier LLM
-  // call on small talk blocks the chat and wastes the daily quota.
   if (local && !local.isTransaction && local.confidence >= LOCAL_FAST_PATH_CONFIDENCE) {
     return {
       isTransaction: false,
@@ -290,27 +342,41 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
     };
   }
 
-  // 2) LLM path (needed for images, used for ambiguous text)
+  // 2) LLM path
   if (apiKey) {
     try {
-      const imageDataUri = imageUri ? await toDataUri(imageUri) : null;
-      const { parsed, model } = await queryOpenRouter(apiKey, text || 'Analyze this receipt/bill image and extract the transaction details.', imageDataUri);
-      const sanitized = sanitizeResult(parsed, `openrouter:${model}`);
-      if (sanitized) return sanitized;
+      if (isWaveSpeedKey(apiKey)) {
+        const { parsed, model } = await queryWaveSpeed(
+          apiKey,
+          text || 'Analyze this receipt/bill image and extract the transaction details.',
+          imageUri
+        );
+        const sanitized = sanitizeResult(parsed, `wavespeed:${model}`);
+        if (sanitized) return sanitized;
+      } else {
+        const imageDataUri = imageUri ? await toDataUri(imageUri) : null;
+        const { parsed, model } = await queryOpenRouter(
+          apiKey,
+          text || 'Analyze this receipt/bill image and extract the transaction details.',
+          imageDataUri
+        );
+        const sanitized = sanitizeResult(parsed, `openrouter:${model}`);
+        if (sanitized) return sanitized;
+      }
     } catch (e) {
-      console.warn('OpenRouter analysis failed:', e.message);
+      console.warn('LLM analysis failed:', e.message);
     }
   }
 
-  // 3) Degrade gracefully: low-confidence local result beats nothing
+  // 3) Degrade gracefully
   if (local && local.isTransaction) return local;
 
   if (imageUri) {
     return {
       isTransaction: false,
       reply: apiKey
-        ? 'The AI service is busy right now (free-tier limit). Please try the image again in a minute, or type the amount as text.'
-        : 'Receipt image analysis needs an OpenRouter API key — ask your admin to set it in Settings.',
+        ? 'The AI service is busy right now. Please try the image again in a minute, or type the amount as text.'
+        : 'Receipt image analysis needs an AI API key — ask your admin to set it in Settings.',
       source: 'fallback',
     };
   }

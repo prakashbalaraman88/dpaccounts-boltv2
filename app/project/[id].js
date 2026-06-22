@@ -227,17 +227,23 @@ export default function ProjectChat() {
         }
         const analysisUri = prepared.dataUri;
 
-        // Upload runs CONCURRENTLY with the AI call — its URL is only
-        // needed when the user saves the category, seconds from now.
-        const uploadPromise = storeReceipt(analysisUri);
-        const messageId = await addMessage(projectId, 'image', 'Shared receipt image', prepared.uri, 'user');
-        uploadPromise
-          .then((url) => { if (url && url !== prepared.uri) updateMessageImage(messageId, projectId, url); })
-          .catch(() => {});
+        // Upload first so the AI receives a public URL (required by some
+        // providers such as WaveSpeed). The message shows the stored URL
+        // immediately; if upload fails we surface the error.
+        let receiptUrl;
+        try {
+          receiptUrl = await storeReceipt(analysisUri);
+        } catch (e) {
+          throw new Error(`Receipt upload failed: ${e.message}`);
+        }
+        if (!receiptUrl || !receiptUrl.startsWith('http')) {
+          throw new Error('Receipt upload did not return a public URL. Image analysis requires a stored receipt URL.');
+        }
+        await addMessage(projectId, 'image', 'Shared receipt image', receiptUrl, 'user');
         await processWithAI(
           'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
-          analysisUri,
-          uploadPromise
+          receiptUrl,
+          receiptUrl
         );
       } catch (e) {
         console.error('Shared image processing failed:', e);
@@ -326,9 +332,9 @@ export default function ProjectChat() {
         await addMessage(projectId, 'text', 'AI analysis took too long. Please try again or type the amount manually.', null, 'system');
       } else {
         const isNoKey = !aiApiKey;
-        let errorText = 'AI analysis failed. Please check the OpenRouter API key in Settings or try again.';
+        let errorText = 'AI analysis failed. Please check the AI API key in Settings or try again.';
         if (isNoKey) {
-          errorText = 'Receipt image analysis needs an OpenRouter API key — ask your admin to set it in Settings.';
+          errorText = 'Receipt image analysis needs an AI API key — ask your admin to set it in Settings.';
         }
         await addMessage(projectId, 'text', errorText, null, 'system');
       }
@@ -401,15 +407,23 @@ export default function ProjectChat() {
         throw new Error('Could not prepare image for analysis');
       }
       const analysisUri = prepared.dataUri;
-      const uploadPromise = storeReceipt(analysisUri);
-      const messageId = await addMessage(projectId, 'image', label, prepared.uri, 'user');
-      uploadPromise
-        .then((url) => { if (url && url !== prepared.uri) updateMessageImage(messageId, projectId, url); })
-        .catch(() => {});
+
+      // Upload first so the AI receives a public URL (required by some
+      // providers such as WaveSpeed).
+      let receiptUrl;
+      try {
+        receiptUrl = await storeReceipt(analysisUri);
+      } catch (e) {
+        throw new Error(`Receipt upload failed: ${e.message}`);
+      }
+      if (!receiptUrl || !receiptUrl.startsWith('http')) {
+        throw new Error('Receipt upload did not return a public URL. Image analysis requires a stored receipt URL.');
+      }
+      await addMessage(projectId, 'image', label, receiptUrl, 'user');
       await processWithAI(
         'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
-        analysisUri,
-        uploadPromise
+        receiptUrl,
+        receiptUrl
       );
     } catch (e) {
       console.error('Image processing failed:', e);
