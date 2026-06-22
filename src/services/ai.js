@@ -146,7 +146,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Image handling — convert any URI the app produces into a data URI
 // ---------------------------------------------------------------------------
 
-const IMAGE_FETCH_TIMEOUT_MS = 15000;
+const IMAGE_FETCH_TIMEOUT_MS = 10000;
 
 async function toDataUri(imageUri) {
   if (!imageUri) return null;
@@ -154,26 +154,33 @@ async function toDataUri(imageUri) {
 
   // fetch() handles file:// (iOS), blob:// (web), https://; content:// is
   // converted to a cached file by the caller before reaching here.
-  const response = await fetchWithTimeout(
-    imageUri,
-    {},
-    IMAGE_FETCH_TIMEOUT_MS
-  );
-  if (!response.ok) {
-    throw new Error(`Failed to read image: ${response.status} ${response.statusText}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(imageUri, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Failed to read image: ${response.status} ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    if (!blob || blob.size === 0) {
+      throw new Error('Image file is empty or unreadable');
+    }
+    const mimeType = blob.type || 'image/jpeg';
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    return `data:${mimeType};base64,${base64}`;
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error('Image read timed out');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const blob = await response.blob();
-  if (!blob || blob.size === 0) {
-    throw new Error('Image file is empty or unreadable');
-  }
-  const mimeType = blob.type || 'image/jpeg';
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(String(reader.result).split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-  return `data:${mimeType};base64,${base64}`;
 }
 
 // ---------------------------------------------------------------------------

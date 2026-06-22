@@ -38,13 +38,18 @@ async function manipulate(uri) {
  * Normalize any image URI (content://, file://, data:) into a small JPEG.
  *
  * @returns {{ uri: string, dataUri: string|null }}
- *   uri      — local file URI of the downscaled image (or the original on failure)
- *   dataUri  — data:image/jpeg;base64 payload for the AI call (null on failure)
+ *   uri      — local file URI of the downscaled image
+ *   dataUri  — data:image/jpeg;base64 payload for the AI call
  */
 export async function prepareReceiptImage(sourceUri) {
-  const result = await manipulate(sourceUri);
-  return {
-    uri: result.uri,
-    dataUri: result.base64 ? `data:image/jpeg;base64,${result.base64}` : null,
-  };
+  try {
+    const result = await manipulate(sourceUri);
+    return {
+      uri: result.uri,
+      dataUri: result.base64 ? `data:image/jpeg;base64,${result.base64}` : null,
+    };
+  } catch (e) {
+    console.error('prepareReceiptImage failed:', e);
+    throw new Error(`Could not prepare image: ${e?.message || 'unknown error'}`);
+  }
 }

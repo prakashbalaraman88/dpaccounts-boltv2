@@ -1,8 +1,215 @@
 diff --git a/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt b/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
-index 0153c89..ad65969 100644
+index 0153c89..110f087 100644
 --- a/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
 +++ b/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
-@@ -142,7 +142,7 @@ class ExpoShareIntentModule : Module() {
+@@ -15,7 +15,7 @@ import android.content.Context
+ import android.content.Intent
+ import android.database.Cursor
+ import android.graphics.BitmapFactory
+-import android.media.MediaMetadataRetriever;
++import android.media.MediaMetadataRetriever
+ import android.net.Uri
+ import android.os.Build
+ import android.os.Environment
+@@ -31,6 +31,7 @@ import expo.modules.kotlin.modules.Module
+ import expo.modules.kotlin.modules.ModuleDefinition
+ import java.io.File
+ import java.io.FileOutputStream
++import java.net.URLConnection
+ import java.util.Date
+ 
+ 
+@@ -52,7 +53,7 @@ class ExpoShareIntentModule : Module() {
+             instance!!.sendEvent("onStateChange", mapOf("value" to state))
+         }
+         private fun notifyError(message: String) {
+-            instance!!.sendEvent("onError", mapOf("value" to message))
++            instance?.sendEvent("onError", mapOf("value" to message))
+         }
+ 
+         @SuppressLint("Range")
+@@ -64,53 +65,150 @@ class ExpoShareIntentModule : Module() {
+                 return mapOf(
+                     "contentUri" to uri.toString(),
+                     "filePath" to instance?.getAbsolutePath(uri),
++                    "fileName" to null,
++                    "fileSize" to null,
++                    "mimeType" to null,
++                    "width" to null,
++                    "height" to null,
++                    "duration" to null,
+                 )
+             }
+-            val queryResult: Cursor = resolver.query(uri, null, null, null, null)!!
+-            queryResult.moveToFirst()
+-            val fileName = queryResult.getString(queryResult.getColumnIndex(OpenableColumns.DISPLAY_NAME))
+-            val fileSize = queryResult.getString(queryResult.getColumnIndex(OpenableColumns.SIZE))
+-            queryResult.close()
+ 
+-            val mimeType = resolver.getType(uri)!!
++            var fileName: String? = null
++            var fileSize: String? = null
++            var mimeType: String? = null
++            var filePath: String? = null
++
++            if ("file".equals(uri.scheme, ignoreCase = true)) {
++                // file:// URIs are not queryable through ContentResolver
++                val file = uri.path?.let { File(it) }
++                if (file != null && file.exists()) {
++                    fileName = file.name
++                    fileSize = file.length().toString()
++                    filePath = instance?.getAbsolutePath(uri) ?: file.absolutePath
++                    mimeType = inferMimeType(file.name)
++                } else {
++                    fileName = file?.name
++                    filePath = file?.absolutePath
++                    notifyError("file does not exist for uri: $uri")
++                }
++            } else {
++                // content:// and other URIs
++                try {
++                    resolver.query(uri, null, null, null, null)?.use { cursor ->
++                        if (cursor.moveToFirst()) {
++                            val displayNameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
++                            if (displayNameIndex >= 0) {
++                                fileName = cursor.getString(displayNameIndex)
++                            }
++                            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
++                            if (sizeIndex >= 0) {
++                                fileSize = cursor.getString(sizeIndex)
++                            }
++                        }
++                    }
+ 
+-            var mediaWidth: String? = null;
+-            var mediaHeight: String? = null;
+-            var mediaDuration: String? = null;
++                    if (fileName == null) {
++                        // Cursor returned no metadata; copy the content to cache and read from the resulting File
++                        filePath = instance?.getAbsolutePath(uri)
++                        if (filePath != null) {
++                            val cachedFile = File(filePath)
++                            if (cachedFile.exists()) {
++                                fileName = cachedFile.name
++                                fileSize = cachedFile.length().toString()
++                            }
++                        }
++                    } else {
++                        filePath = instance?.getAbsolutePath(uri)
++                    }
++
++                    mimeType = resolver.getType(uri) ?: inferMimeType(fileName)
++                } catch (e: Exception) {
++                    notifyError("failed to read file info for $uri: ${e.message}")
++                    return mapOf(
++                        "contentUri" to uri.toString(),
++                        "filePath" to filePath,
++                        "fileName" to fileName,
++                        "fileSize" to fileSize,
++                        "mimeType" to mimeType,
++                        "width" to null,
++                        "height" to null,
++                        "duration" to null,
++                    )
++                }
++            }
++
++            if (mimeType == null) {
++                mimeType = "application/octet-stream"
++            }
++
++            var mediaWidth: String? = null
++            var mediaHeight: String? = null
++            var mediaDuration: String? = null
+             if (mimeType.startsWith("image/")) {
+                 val options = BitmapFactory.Options().apply {
+                     inJustDecodeBounds = true
+                 }
+-                BitmapFactory.decodeStream(resolver.openInputStream(uri), null, options)
+-                mediaHeight = options.outHeight.toString()
+-                mediaWidth = options.outWidth.toString()
++                try {
++                    resolver.openInputStream(uri)?.use { input ->
++                        BitmapFactory.decodeStream(input, null, options)
++                    }
++                    if (options.outWidth > 0 && options.outHeight > 0) {
++                        mediaWidth = options.outWidth.toString()
++                        mediaHeight = options.outHeight.toString()
++                    }
++                } catch (e: Exception) {
++                    notifyError("cannot decode image bounds for $uri: ${e.message}")
++                }
+             }
+             if (mimeType.startsWith("video/")) {
+-                val retriever = MediaMetadataRetriever()
+-                retriever.setDataSource(instance?.getAbsolutePath(uri))
+-                mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt().toString() ?: null
+-                mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt().toString() ?: null
+-                // Check orientation and flip size if required
+-                val metaRotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0;
+-                if (metaRotation == 90 || metaRotation == 270) {
+-                    mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt().toString() ?: null
+-                    mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt().toString() ?: null
++                val videoPath = filePath ?: instance?.getAbsolutePath(uri)
++                if (videoPath != null) {
++                    val retriever = MediaMetadataRetriever()
++                    try {
++                        retriever.setDataSource(videoPath)
++                        mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()?.toString()
++                        mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()?.toString()
++                        // Check orientation and flip size if required
++                        val metaRotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
++                        if (metaRotation == 90 || metaRotation == 270) {
++                            mediaWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()?.toString()
++                            mediaHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()?.toString()
++                        }
++                        mediaDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull()?.toString()
++                    } catch (e: Exception) {
++                        notifyError("cannot retrieve video metadata for $uri: ${e.message}")
++                    } finally {
++                        try {
++                            retriever.release()
++                        } catch (e: Exception) {
++                            // ignore
++                        }
++                    }
+                 }
+-                mediaDuration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toInt().toString() ?: null
+             }
+ 
+             return mapOf(
+-                    "contentUri" to uri.toString(),
+-                    "filePath" to instance?.getAbsolutePath(uri),
+-                    "fileName" to fileName,
+-                    "fileSize" to fileSize,
+-                    "mimeType" to mimeType,
+-                    "width" to mediaWidth,
+-                    "height" to mediaHeight,
+-                    "duration" to mediaDuration
++                "contentUri" to uri.toString(),
++                "filePath" to filePath,
++                "fileName" to fileName,
++                "fileSize" to fileSize,
++                "mimeType" to mimeType,
++                "width" to mediaWidth,
++                "height" to mediaHeight,
++                "duration" to mediaDuration
+             )
+         }
+ 
++        private fun inferMimeType(fileName: String?): String? {
++            if (fileName.isNullOrBlank()) return null
++            val extension = fileName.substringAfterLast('.', "")
++            if (extension.isNotBlank()) {
++                MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.lowercase())?.let { return it }
++            }
++            return URLConnection.guessContentTypeFromName(fileName)
++        }
++
+         fun handleShareIntent(intent: Intent) {
+             val activity = instance?.currentActivity
+             if (activity != null && !activity.isTaskRoot) {
+@@ -142,7 +240,7 @@ class ExpoShareIntentModule : Module() {
                  if (intent.action == Intent.ACTION_SEND) {
                      val uri = intent.parcelable<Uri>(Intent.EXTRA_STREAM);
                      if (uri != null) {

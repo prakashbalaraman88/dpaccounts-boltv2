@@ -177,16 +177,18 @@ export default function ProjectChat() {
   // while still allowing a brand-new share (different param value) to run.
   const lastSharedImage = useRef(null);
   const lastSharedText = useRef(null);
+  const isProcessingShare = useRef(false);
 
   // Auto-process shared image from share intent.
   // Fully fenced: in release builds an unhandled rejection here kills the
   // whole app, so every step is caught and surfaced as a chat message.
   useEffect(() => {
-    if (!sharedImage || !currentProject || isSending) return;
+    if (!sharedImage || !currentProject || isSending || isProcessingShare.current) return;
     if (lastSharedImage.current === sharedImage) return;
     lastSharedImage.current = sharedImage;
-
+    isProcessingShare.current = true;
     setIsSending(true);
+
     (async () => {
       try {
         let imageUri;
@@ -199,14 +201,20 @@ export default function ProjectChat() {
           imageUri = 'file://' + imageUri;
         }
 
-        // content:// URIs (Android share) → copy into our cache first
+        // content:// URIs (Android share) → copy into our cache first.
+        // The originating app can revoke the temporary permission at any
+        // moment, so validate the copy before continuing.
         let readPath = imageUri;
         if (imageUri.startsWith('content://')) {
           const cachePath = FileSystem.cacheDirectory + 'shared_receipt_' + Date.now() + '.jpg';
-          await FileSystem.copyAsync({ from: imageUri, to: cachePath });
+          try {
+            await FileSystem.copyAsync({ from: imageUri, to: cachePath });
+          } catch (e) {
+            throw new Error(`Cannot access shared image (URI expired during copy?): ${e.message}`);
+          }
           const info = await FileSystem.getInfoAsync(cachePath);
           if (!info.exists || info.size === 0) {
-            throw new Error('Shared image could not be copied from the originating app. Try sharing again or pick from gallery.');
+            throw new Error('Shared image copy failed or file is empty — URI may have expired');
           }
           readPath = cachePath;
         }
@@ -239,6 +247,7 @@ export default function ProjectChat() {
           null, 'system'
         ).catch(() => {});
       } finally {
+        isProcessingShare.current = false;
         setIsSending(false);
       }
     })();
@@ -246,11 +255,12 @@ export default function ProjectChat() {
 
   // Auto-process shared TEXT (GPay and many apps share text, not images)
   useEffect(() => {
-    if (!sharedText || !currentProject || isSending) return;
+    if (!sharedText || !currentProject || isSending || isProcessingShare.current) return;
     if (lastSharedText.current === sharedText) return;
     lastSharedText.current = sharedText;
-
+    isProcessingShare.current = true;
     setIsSending(true);
+
     (async () => {
       try {
         let text;
@@ -269,6 +279,7 @@ export default function ProjectChat() {
           null, 'system'
         ).catch(() => {});
       } finally {
+        isProcessingShare.current = false;
         setIsSending(false);
       }
     })();
@@ -276,17 +287,19 @@ export default function ProjectChat() {
 
   // receiptUrl may be a string OR a pending upload Promise — it's resolved
   // at category-save time so the AI never waits on the upload.
-  const AI_TIMEOUT_MS = 30000;
+  const AI_TIMEOUT_MS = 35000;
   const processWithAI = async (content, imageUri = null, receiptUrl = null) => {
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('AI analysis timeout')), AI_TIMEOUT_MS)
+    );
+
     try {
       // analyzeMessage parses simple text locally and only needs the API
       // key for receipts and ambiguous phrasing. Add an outer timeout so a
       // stuck image fetch or slow model never leaves the UI in "Analyzing…".
       const result = await Promise.race([
         analyzeMessage(aiApiKey, content, imageUri),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI analysis timed out. Please try again.')), AI_TIMEOUT_MS)
-        ),
+        timeoutPromise,
       ]);
 
       if (result.isTransaction) {
@@ -309,15 +322,16 @@ export default function ProjectChat() {
       }
     } catch (error) {
       console.error('AI analysis error:', error);
-      const isTimeout = error?.message?.includes('timed out');
-      const isNoKey = !aiApiKey;
-      let errorText = 'AI analysis failed. Please check the OpenRouter API key in Settings or try again.';
-      if (isNoKey) {
-        errorText = 'Receipt image analysis needs an OpenRouter API key — ask your admin to set it in Settings.';
-      } else if (isTimeout) {
-        errorText = 'AI analysis timed out. The free-tier model may be busy — please try again in a moment.';
+      if (error?.message === 'AI analysis timeout') {
+        await addMessage(projectId, 'text', 'AI analysis took too long. Please try again or type the amount manually.', null, 'system');
+      } else {
+        const isNoKey = !aiApiKey;
+        let errorText = 'AI analysis failed. Please check the OpenRouter API key in Settings or try again.';
+        if (isNoKey) {
+          errorText = 'Receipt image analysis needs an OpenRouter API key — ask your admin to set it in Settings.';
+        }
+        await addMessage(projectId, 'text', errorText, null, 'system');
       }
-      await addMessage(projectId, 'text', errorText, null, 'system');
     }
   };
 

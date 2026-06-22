@@ -1,5 +1,5 @@
 import 'react-native-url-polyfill/auto';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider } from 'react-native-paper';
 import { ThemeProvider } from '@react-navigation/native';
@@ -118,7 +118,7 @@ function RootLayoutInner() {
   const loadProjects = useAppStore((s) => s.loadProjects);
   const loadSettings = useAppStore((s) => s.loadSettings);
   const { session, profile, isLoading, initialize } = useAuthStore();
-  const { hasShareIntent, isReady: isShareIntentReady } = useShareIntentContext();
+  const { hasShareIntent, isReady: isShareIntentReady, resetShareIntent } = useShareIntentContext();
   const router = useRouter();
   const segments = useSegments();
 
@@ -159,6 +159,19 @@ function RootLayoutInner() {
       router.replace('/share');
     }
   }, [hasShareIntent, session, profile, segments]);
+
+  // Reset the share intent once the user LEAVES the share screen, so a stale
+  // intent doesn't re-trigger the redirect/gate on later navigations. We must
+  // compare against the previous segment: if we reset whenever we are not on
+  // /share, a fresh share intent on another screen can be cleared in the same
+  // render that redirects to /share.
+  const prevSegment = useRef(segments[0]);
+  useEffect(() => {
+    if (prevSegment.current === 'share' && segments[0] !== 'share' && hasShareIntent) {
+      resetShareIntent();
+    }
+    prevSegment.current = segments[0];
+  }, [segments[0], hasShareIntent, resetShareIntent]);
 
   // Retry reading the native share intent after the JS listeners are ready.
   // expo-share-intent can emit the event before the listener attaches on cold start.

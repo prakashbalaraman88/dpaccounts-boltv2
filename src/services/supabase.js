@@ -28,6 +28,7 @@ export const isSupabaseConfigured = () => true;
  * @returns {string} Public URL of the uploaded image
  */
 const UPLOAD_FETCH_TIMEOUT_MS = 20000;
+const SUPABASE_UPLOAD_TIMEOUT_MS = 15000;
 
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
@@ -54,12 +55,18 @@ export async function uploadReceiptImage(imageUri, projectId) {
   const ext = (contentType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
   const fileName = `${projectId}/${Date.now()}.${ext}`;
 
-  const { data, error } = await supabase.storage
+  const uploadPromise = supabase.storage
     .from('receipts')
     .upload(fileName, blob, {
       contentType,
       upsert: false,
     });
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Supabase upload timed out')), SUPABASE_UPLOAD_TIMEOUT_MS)
+  );
+
+  const { data, error } = await Promise.race([uploadPromise, timeoutPromise]);
 
   if (error) throw error;
 
