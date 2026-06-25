@@ -31,7 +31,7 @@ import * as FileSystem from 'expo-file-system';
 import { theme, formatRupees, CATEGORIES } from '../../src/constants/theme';
 import { formatTime } from '../../src/utils/datetime';
 import { prepareReceiptImage } from '../../src/utils/images';
-import { impactLight, impactMedium, notificationSuccess, notificationError } from '../../src/utils/haptics';
+import { impactLight, impactMedium, impactHeavy, notificationSuccess, notificationError } from '../../src/utils/haptics';
 import { useAppStore } from '../../src/stores/appStore';
 import { analyzeMessage } from '../../src/services/ai';
 import { uploadReceiptImage } from '../../src/services/supabase';
@@ -93,7 +93,7 @@ function CategoryItem({ category, onPress }) {
 }
 
 export default function ProjectChat() {
-  const { id, sharedImage, sharedText } = useLocalSearchParams();
+  const { id, sharedImage, sharedText, shareTs } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const projectId = parseInt(id);
@@ -130,6 +130,12 @@ export default function ProjectChat() {
   const [editTxnVendor, setEditTxnVendor] = useState('');
   const [confirmTxnDelete, setConfirmTxnDelete] = useState(false);
   const [confirmProjectDelete, setConfirmProjectDelete] = useState(false);
+  // Keep a local copy of receipt images so bubbles render instantly even if the
+  // cloud URL is slow or fails to load in the inverted chat list.
+  const [localImageUris, setLocalImageUris] = useState({});
+  // Surfaces a load failure as a friendly screen instead of letting an
+  // unhandled rejection from loadProject bubble up to the crash guard.
+  const [loadError, setLoadError] = useState(null);
 
   // Listen for keyboard to adjust edit modal height on Android
   useEffect(() => {
@@ -152,7 +158,16 @@ export default function ProjectChat() {
 
   useFocusEffect(
     useCallback(() => {
-      loadProject(projectId);
+      let active = true;
+      setLoadError(null);
+      // loadProject rejects on a bad id / RLS / network failure. Catch it here
+      // so the project screen never crashes or bounces back to home on open.
+      Promise.resolve(loadProject(projectId)).catch((e) => {
+        if (!active) return;
+        console.error('Failed to load project:', e);
+        setLoadError(e?.message || 'Could not load this project.');
+      });
+      return () => { active = false; };
     }, [projectId])
   );
 
@@ -174,18 +189,35 @@ export default function ProjectChat() {
 
   // Track which sharedImage/sharedText params we have already processed so
   // re-renders and navigation back-and-forth do not re-trigger the pipeline,
-  // while still allowing a brand-new share (different param value) to run.
+  // while still allowing a brand-new share (different URI or timestamp) to run.
   const lastSharedImage = useRef(null);
   const lastSharedText = useRef(null);
   const isProcessingShare = useRef(false);
+
+  // Helper: copy a content:// URI into our cache before the sender revokes it.
+  const copySharedUriToCache = async (imageUri) => {
+    if (!imageUri.startsWith('content://')) return imageUri;
+    const cachePath = FileSystem.cacheDirectory + 'shared_receipt_' + Date.now() + '.jpg';
+    try {
+      await FileSystem.copyAsync({ from: imageUri, to: cachePath });
+    } catch (e) {
+      throw new Error(`Cannot access shared image (URI expired during copy?): ${e.message}`);
+    }
+    const info = await FileSystem.getInfoAsync(cachePath);
+    if (!info.exists || info.size === 0) {
+      throw new Error('Shared image copy failed or file is empty — URI may have expired');
+    }
+    return cachePath;
+  };
 
   // Auto-process shared image from share intent.
   // Fully fenced: in release builds an unhandled rejection here kills the
   // whole app, so every step is caught and surfaced as a chat message.
   useEffect(() => {
     if (!sharedImage || !currentProject || isSending || isProcessingShare.current) return;
-    if (lastSharedImage.current === sharedImage) return;
-    lastSharedImage.current = sharedImage;
+    const shareKey = `${sharedImage}:${shareTs || ''}`;
+    if (lastSharedImage.current === shareKey) return;
+    lastSharedImage.current = shareKey;
     isProcessingShare.current = true;
     setIsSending(true);
 
@@ -201,50 +233,71 @@ export default function ProjectChat() {
           imageUri = 'file://' + imageUri;
         }
 
-        // content:// URIs (Android share) → copy into our cache first.
-        // The originating app can revoke the temporary permission at any
-        // moment, so validate the copy before continuing.
-        let readPath = imageUri;
-        if (imageUri.startsWith('content://')) {
-          const cachePath = FileSystem.cacheDirectory + 'shared_receipt_' + Date.now() + '.jpg';
-          try {
-            await FileSystem.copyAsync({ from: imageUri, to: cachePath });
-          } catch (e) {
-            throw new Error(`Cannot access shared image (URI expired during copy?): ${e.message}`);
-          }
-          const info = await FileSystem.getInfoAsync(cachePath);
-          if (!info.exists || info.size === 0) {
-            throw new Error('Shared image copy failed or file is empty — URI may have expired');
-          }
-          readPath = cachePath;
-        }
+        const readPath = await copySharedUriToCache(imageUri);
 
         // Downscale to a small JPEG — full-size screenshots OOM-crash
-        // mid-range phones when base64'd
+        // mid-range phones when base64'd.
         const prepared = await prepareReceiptImage(readPath);
         if (!prepared.dataUri) {
           throw new Error('Could not read the shared image. It may be corrupted or no longer accessible.');
         }
         const analysisUri = prepared.dataUri;
 
-        // Upload first so the AI receives a public URL (required by some
-        // providers such as WaveSpeed). The message shows the stored URL
-        // immediately; if upload fails we surface the error.
-        let receiptUrl;
+        // Show the downscaled local image immediately so the receipt is visible
+        // while the upload/AI run in the background.
+        let messageId;
         try {
-          receiptUrl = await storeReceipt(analysisUri);
+          messageId = await addMessage(projectId, 'image', 'Shared receipt image', prepared.uri, 'user');
+          setLocalImageUris((prev) => ({ ...prev, [messageId]: prepared.uri }));
         } catch (e) {
-          throw new Error(`Receipt upload failed: ${e.message}`);
+          throw new Error(`Could not add receipt message: ${e.message}`);
         }
-        if (!receiptUrl || !receiptUrl.startsWith('http')) {
-          throw new Error('Receipt upload did not return a public URL. Image analysis requires a stored receipt URL.');
+
+        // Start a background upload so the receipt persists in the cloud. We do
+        // NOT block analysis on this upload; the vision model receives the
+        // downscaled image as a base64 data URI.
+        const uploadPromise = storeReceipt(analysisUri)
+          .then((url) => {
+            if (url?.startsWith('http')) {
+              updateMessageImage(messageId, projectId, url).catch((err) =>
+                console.warn('Failed to update message image after upload:', err)
+              );
+            } else {
+              console.warn('Receipt upload did not return a public URL; keeping local image');
+            }
+            return url;
+          })
+          .catch((e) => {
+            console.warn('Background receipt upload failed:', e);
+            return null;
+          });
+
+        // WaveSpeed models currently require a public HTTPS URL, so for
+        // WaveSpeed keys we still upload first and analyze the public URL.
+        // OpenRouter (and most other providers) accept base64 data URIs.
+        const isWaveSpeed = typeof aiApiKey === 'string' && aiApiKey.startsWith('wsk_');
+        let imageForAI = analysisUri;
+        if (isWaveSpeed) {
+          const publicUrl = await uploadPromise;
+          if (!publicUrl?.startsWith('http')) {
+            throw new Error('WaveSpeed requires a public receipt URL, but the upload did not return one.');
+          }
+          imageForAI = publicUrl;
         }
-        await addMessage(projectId, 'image', 'Shared receipt image', receiptUrl, 'user');
-        await processWithAI(
-          'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
-          receiptUrl,
-          receiptUrl
-        );
+
+        let promptText = 'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.';
+        if (sharedText) {
+          try {
+            const text = decodeURIComponent(String(sharedText));
+            if (text) {
+              promptText = `Text shared with the image: "${text}". ${promptText}`;
+            }
+          } catch {
+            // ignore decoding errors
+          }
+        }
+
+        await processWithAI(promptText, imageForAI, uploadPromise);
       } catch (e) {
         console.error('Shared image processing failed:', e);
         await addMessage(
@@ -257,13 +310,16 @@ export default function ProjectChat() {
         setIsSending(false);
       }
     })();
-  }, [sharedImage, currentProject, isSending, projectId]);
+  }, [sharedImage, sharedText, currentProject, isSending, projectId, shareTs, aiApiKey]);
 
-  // Auto-process shared TEXT (GPay and many apps share text, not images)
+  // Auto-process shared TEXT (GPay and many apps share text, not images).
+  // If an image was also shared we skip the separate text effect; the image
+  // effect already includes the shared text in its prompt.
   useEffect(() => {
-    if (!sharedText || !currentProject || isSending || isProcessingShare.current) return;
-    if (lastSharedText.current === sharedText) return;
-    lastSharedText.current = sharedText;
+    if (!sharedText || sharedImage || !currentProject || isSending || isProcessingShare.current) return;
+    const shareKey = `${sharedText}:${shareTs || ''}`;
+    if (lastSharedText.current === shareKey) return;
+    lastSharedText.current = shareKey;
     isProcessingShare.current = true;
     setIsSending(true);
 
@@ -289,7 +345,7 @@ export default function ProjectChat() {
         setIsSending(false);
       }
     })();
-  }, [sharedText, currentProject, isSending, projectId]);
+  }, [sharedText, sharedImage, currentProject, isSending, projectId, shareTs]);
 
   // receiptUrl may be a string OR a pending upload Promise — it's resolved
   // at category-save time so the AI never waits on the upload.
@@ -393,7 +449,8 @@ export default function ProjectChat() {
     return normalized;
   };
 
-  // Shared pipeline for picked/captured images: copy → downscale → upload ∥ analyze
+  // Shared pipeline for picked/captured images: copy → downscale → analyze
+  // immediately, then upload in the background.
   const processPickedImage = async (asset, label) => {
     if (!asset?.uri) {
       await addMessage(projectId, 'text', 'No image was selected. Please try again.', null, 'system').catch(() => {});
@@ -408,22 +465,47 @@ export default function ProjectChat() {
       }
       const analysisUri = prepared.dataUri;
 
-      // Upload first so the AI receives a public URL (required by some
-      // providers such as WaveSpeed).
-      let receiptUrl;
+      // Show the local image immediately, then upload for persistence in the
+      // background so analysis is never blocked by network/storage issues.
+      let messageId;
       try {
-        receiptUrl = await storeReceipt(analysisUri);
+        messageId = await addMessage(projectId, 'image', label, prepared.uri, 'user');
+        setLocalImageUris((prev) => ({ ...prev, [messageId]: prepared.uri }));
       } catch (e) {
-        throw new Error(`Receipt upload failed: ${e.message}`);
+        throw new Error(`Could not add receipt message: ${e.message}`);
       }
-      if (!receiptUrl || !receiptUrl.startsWith('http')) {
-        throw new Error('Receipt upload did not return a public URL. Image analysis requires a stored receipt URL.');
+
+      const uploadPromise = storeReceipt(analysisUri)
+        .then((url) => {
+          if (url?.startsWith('http')) {
+            updateMessageImage(messageId, projectId, url).catch((err) =>
+              console.warn('Failed to update message image after upload:', err)
+            );
+          } else {
+            console.warn('Receipt upload did not return a public URL; keeping local image');
+          }
+          return url;
+        })
+        .catch((e) => {
+          console.warn('Background receipt upload failed:', e);
+          return null;
+        });
+
+      // WaveSpeed requires public HTTPS URLs; everyone else accepts base64.
+      const isWaveSpeed = typeof aiApiKey === 'string' && aiApiKey.startsWith('wsk_');
+      let imageForAI = analysisUri;
+      if (isWaveSpeed) {
+        const publicUrl = await uploadPromise;
+        if (!publicUrl?.startsWith('http')) {
+          throw new Error('WaveSpeed requires a public receipt URL, but the upload did not return one.');
+        }
+        imageForAI = publicUrl;
       }
-      await addMessage(projectId, 'image', label, receiptUrl, 'user');
+
       await processWithAI(
         'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.',
-        receiptUrl,
-        receiptUrl
+        imageForAI,
+        uploadPromise
       );
     } catch (e) {
       console.error('Image processing failed:', e);
@@ -626,8 +708,13 @@ export default function ProjectChat() {
             item.transaction_id && styles.transactionBubble,
           ]}
         >
-          {item.type === 'image' && item.image_uri && (
-            <Image source={{ uri: item.image_uri }} style={styles.messageImage} resizeMode="cover" />
+          {item.type === 'image' && (localImageUris[item.id] || item.image_uri) && (
+            <Image
+              source={{ uri: localImageUris[item.id] || item.image_uri }}
+              style={styles.messageImage}
+              resizeMode="cover"
+              renderToHardwareTextureAndroid
+            />
           )}
           <Text style={[styles.messageText, isUser && styles.sentText]}>{item.content}</Text>
           {item.transaction_id && (
@@ -670,6 +757,36 @@ export default function ProjectChat() {
     if (!name) return '??';
     return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   };
+
+  // Load failed and we have no project to show: render a recoverable error
+  // screen instead of a blank/crashing chat.
+  if (loadError && !currentProject) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 28 }]}>
+        <IconButton icon="alert-circle-outline" iconColor={theme.colors.expense} size={44} style={{ margin: 0 }} />
+        <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.onSurface, marginTop: 12, marginBottom: 6 }}>
+          Couldn't open this project
+        </Text>
+        <Text style={{ fontSize: 13, color: theme.colors.secondary, textAlign: 'center', lineHeight: 20, marginBottom: 22 }}>
+          {loadError}
+        </Text>
+        <Pressable
+          style={{ backgroundColor: theme.colors.primary, borderRadius: 14, paddingVertical: 13, paddingHorizontal: 28, marginBottom: 12 }}
+          onPress={() => {
+            setLoadError(null);
+            Promise.resolve(loadProject(projectId)).catch((e) =>
+              setLoadError(e?.message || 'Could not load this project.')
+            );
+          }}
+        >
+          <Text style={{ color: '#0A0A0A', fontWeight: '700', fontSize: 15 }}>Try Again</Text>
+        </Pressable>
+        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
+          <Text style={{ color: theme.colors.secondary, fontSize: 14, fontWeight: '600' }}>Back to projects</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView

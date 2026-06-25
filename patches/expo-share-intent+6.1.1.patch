@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt b/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
-index 0153c89..110f087 100644
+index 0153c89..bcf10e4 100644
 --- a/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
 +++ b/node_modules/expo-share-intent/android/src/main/java/expo/modules/shareintent/ExpoShareIntentModule.kt
 @@ -15,7 +15,7 @@ import android.content.Context
@@ -28,7 +28,7 @@ index 0153c89..110f087 100644
          }
  
          @SuppressLint("Range")
-@@ -64,53 +65,150 @@ class ExpoShareIntentModule : Module() {
+@@ -64,63 +65,194 @@ class ExpoShareIntentModule : Module() {
                  return mapOf(
                      "contentUri" to uri.toString(),
                      "filePath" to instance?.getAbsolutePath(uri),
@@ -58,11 +58,13 @@ index 0153c89..110f087 100644
 +                if (file != null && file.exists()) {
 +                    fileName = file.name
 +                    fileSize = file.length().toString()
-+                    filePath = instance?.getAbsolutePath(uri) ?: file.absolutePath
++                    // Keep the file:// scheme so React Native's Image can load it.
++                    filePath = uri.toString()
 +                    mimeType = inferMimeType(file.name)
++                    Log.d("ExpoShareIntent", "file uri resolved: $filePath")
 +                } else {
 +                    fileName = file?.name
-+                    filePath = file?.absolutePath
++                    filePath = uri.toString()
 +                    notifyError("file does not exist for uri: $uri")
 +                }
 +            } else {
@@ -197,6 +199,11 @@ index 0153c89..110f087 100644
              )
          }
  
+-        fun handleShareIntent(intent: Intent) {
+-            val activity = instance?.currentActivity
+-            if (activity != null && !activity.isTaskRoot) {
+-                val newIntent = Intent(intent).apply {
+-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 +        private fun inferMimeType(fileName: String?): String? {
 +            if (fileName.isNullOrBlank()) return null
 +            val extension = fileName.substringAfterLast('.', "")
@@ -206,18 +213,105 @@ index 0153c89..110f087 100644
 +            return URLConnection.guessContentTypeFromName(fileName)
 +        }
 +
-         fun handleShareIntent(intent: Intent) {
-             val activity = instance?.currentActivity
-             if (activity != null && !activity.isTaskRoot) {
-@@ -142,7 +240,7 @@ class ExpoShareIntentModule : Module() {
++        /**
++         * Copy a content:// URI into the app cache so the JS layer receives a
++         * durable file:// path. Many payment apps share screenshots from their
++         * private cache and revoke the temporary URI permission as soon as the
++         * share sheet closes; reading the bytes immediately prevents "lost"
++         * receipts.
++         */
++        private fun copyToCacheIfNeeded(uri: Uri): Uri {
++            if (!"content".equals(uri.scheme, ignoreCase = true)) {
++                return uri
++            }
++            val resolver = instance?.currentActivity?.contentResolver
++                    ?: instance?.context?.contentResolver
++                    ?: return uri
++            val cacheDir = instance?.currentActivity?.cacheDir
++                    ?: instance?.context?.cacheDir
++                    ?: return uri
++            return try {
++                val mimeType = resolver.getType(uri) ?: "image/jpeg"
++                val ext = when (mimeType) {
++                    "image/png" -> "png"
++                    "image/webp" -> "webp"
++                    else -> "jpg"
+                 }
+-                activity.startActivity(newIntent)
+-                activity.finish()
+-                return
++                val dest = File(cacheDir, "expo_share_intent_${System.currentTimeMillis()}.$ext")
++                resolver.openInputStream(uri)?.use { input ->
++                    FileOutputStream(dest).use { output ->
++                        input.copyTo(output)
++                    }
++                }
++                Uri.fromFile(dest)
++            } catch (e: Exception) {
++                notifyError("failed to copy shared content to cache: ${e.message}")
++                uri
+             }
++        }
++
++        fun handleShareIntent(intent: Intent) {
++            // NOTE: Removed the !isTaskRoot restart branch. On Android the
++            // main Activity is singleTask; restarting it here was discarding
++            // the share intent and sending the user back to the sender app.
++            Log.d("ExpoShareIntent", "handleShareIntent action=${intent.action} type=${intent.type} extras=${intent.extras?.keySet()?.joinToString()}")
+             if (intent.type == null) return
+             if (intent.type!!.startsWith("text/plain")) {
+                 // text / urls
+@@ -140,16 +272,28 @@ class ExpoShareIntentModule : Module() {
+             } else {
+                 // files / medias
                  if (intent.action == Intent.ACTION_SEND) {
-                     val uri = intent.parcelable<Uri>(Intent.EXTRA_STREAM);
+-                    val uri = intent.parcelable<Uri>(Intent.EXTRA_STREAM);
++                    var uri = intent.parcelable<Uri>(Intent.EXTRA_STREAM);
++                    if (uri == null && intent.clipData != null && intent.clipData!!.itemCount > 0) {
++                        uri = intent.clipData!!.getItemAt(0).uri
++                    }
                      if (uri != null) {
 -                        notifyShareIntent(mapOf( "files" to arrayOf(getFileInfo(uri), "type" to "file")))
-+                        notifyShareIntent(mapOf( "files" to arrayOf(getFileInfo(uri)), "type" to "file"))
++                        val localUri = copyToCacheIfNeeded(uri)
++                        Log.d("ExpoShareIntent", "ACTION_SEND localUri=$localUri")
++                        notifyShareIntent(mapOf( "files" to arrayOf(getFileInfo(localUri)), "type" to "file"))
                      } else {
                          notifyError("empty uri for file sharing: " + intent.action)
                      }
+                 } else if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+-                    val uris = intent.parcelableArrayList<Uri>(Intent.EXTRA_STREAM)
+-                    if (uris != null) {
+-                        notifyShareIntent(mapOf( "files" to uris.map { getFileInfo(it) }, "type" to "file"))
++                    var uris = intent.parcelableArrayList<Uri>(Intent.EXTRA_STREAM)
++                    if (uris == null && intent.clipData != null) {
++                        uris = ArrayList<Uri>()
++                        for (i in 0 until intent.clipData!!.itemCount) {
++                            intent.clipData!!.getItemAt(i).uri?.let { uris.add(it) }
++                        }
++                    }
++                    if (uris != null && uris.isNotEmpty()) {
++                        val localUris = uris.map { copyToCacheIfNeeded(it) }
++                        notifyShareIntent(mapOf( "files" to localUris.map { getFileInfo(it) }, "type" to "file"))
+                     } else {
+                         notifyError("empty uris array for file sharing: " + intent.action)
+                     }
+@@ -196,8 +340,14 @@ class ExpoShareIntentModule : Module() {
+             ExpoShareIntentSingleton.isPending
+         }
+ 
+-        OnNewIntent {
+-            handleShareIntent(it)
++        OnNewIntent { intent ->
++            // Keep a copy in the singleton so cold-start / missed-event retries
++            // can recover the same intent.
++            if (intent.type != null) {
++                ExpoShareIntentSingleton.intent = intent
++                ExpoShareIntentSingleton.isPending = true
++            }
++            handleShareIntent(intent)
+         }
+ 
+         OnCreate {
 diff --git a/node_modules/expo-share-intent/build/useShareIntent.js b/node_modules/expo-share-intent/build/useShareIntent.js
 index 1ab12c4..8d500f2 100644
 --- a/node_modules/expo-share-intent/build/useShareIntent.js

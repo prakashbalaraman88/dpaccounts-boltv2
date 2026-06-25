@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, Pressable, Linking, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { Text, TextInput, IconButton } from 'react-native-paper';
 import Animated, {
@@ -46,6 +46,13 @@ export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState(aiApiKey);
   const [saved, setSaved] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const providerName = useMemo(() => {
+    if (!apiKey) return 'OpenRouter / WaveSpeed';
+    if (apiKey.startsWith('wsk_')) return 'WaveSpeed';
+    if (apiKey.startsWith('sk-or-v1-')) return 'OpenRouter';
+    return 'OpenRouter / WaveSpeed';
+  }, [apiKey]);
 
   // Sync local state when store loads the persisted key
   useEffect(() => {
@@ -146,22 +153,22 @@ export default function SettingsScreen() {
               <IconButton icon="key-variant" iconColor={theme.colors.primary} size={20} style={{ margin: 0 }} />
             </View>
             <View>
-              <Text style={styles.sectionTitle}>OpenRouter AI</Text>
-              <Text style={styles.sectionTag}>Gemma 4 · Free Model</Text>
+              <Text style={styles.sectionTitle}>AI API Key</Text>
+              <Text style={styles.sectionTag}>{providerName}</Text>
             </View>
           </View>
 
           {isAdmin ? (
             <>
               <Text style={styles.sectionDesc}>
-                Enter your OpenRouter API key (sk-or-v1-...) to enable AI-powered transaction analysis from messages and receipt images. Simple messages are parsed on-device; the AI handles receipts and tricky phrasing.
+                Enter your AI provider API key. Supports WaveSpeed (wsk_...) for fast, reliable analysis, or OpenRouter (sk-or-v1-...) for free vision models. Simple messages are parsed on-device; the AI handles receipts and tricky phrasing.
               </Text>
 
               <Pressable
                 style={styles.linkButton}
-                onPress={() => Linking.openURL('https://openrouter.ai/settings/keys')}
+                onPress={() => Linking.openURL('https://wavespeed.ai/accesskey')}
               >
-                <Text style={styles.linkText}>Get a free API key</Text>
+                <Text style={styles.linkText}>Get a WaveSpeed API key</Text>
                 <IconButton icon="open-in-new" iconColor={theme.colors.primary} size={14} style={{ margin: 0 }} />
               </Pressable>
 
@@ -172,7 +179,7 @@ export default function SettingsScreen() {
                   onChangeText={setApiKey}
                   style={styles.input}
                   mode="outlined"
-                  placeholder="Enter your OpenRouter API key"
+                  placeholder="Enter your WaveSpeed or OpenRouter API key"
                   placeholderTextColor={theme.colors.secondary}
                   secureTextEntry
                   outlineColor={theme.colors.outline}

@@ -3,8 +3,11 @@ import { supabase } from '../services/supabase';
 import { useAuthStore } from './authStore';
 
 // Build-time default so fresh installs work before an admin saves a key.
-// Set EXPO_PUBLIC_OPENROUTER_API_KEY in .env (gitignored).
-const DEFAULT_AI_KEY = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY || '';
+// Set EXPO_PUBLIC_AI_API_KEY (or legacy EXPO_PUBLIC_OPENROUTER_API_KEY) in .env (gitignored).
+const DEFAULT_AI_KEY =
+  process.env.EXPO_PUBLIC_AI_API_KEY ||
+  process.env.EXPO_PUBLIC_OPENROUTER_API_KEY ||
+  '';
 
 export const useAppStore = create((set, get) => ({
   projects: [],
@@ -12,7 +15,9 @@ export const useAppStore = create((set, get) => ({
   messages: [],
   isLoading: false,
   aiApiKey: DEFAULT_AI_KEY,
-  overallCategoryBreakdown: [],
+  // A project-level lock so rapid transaction saves (e.g. user tapping
+  // multiple categories or concurrent share-intent processing) never race.
+  _txnLocks: new Map(),
 
   // === SETTINGS ===
 
@@ -20,16 +25,17 @@ export const useAppStore = create((set, get) => ({
     // Guard: don't query if not authenticated
     if (!useAuthStore.getState().session) return;
     try {
-      const { data, error } = await supabase
+      const { data: rows, error } = await supabase
         .from('app_settings')
-        .select('value')
-        .eq('key', 'openrouter_api_key')
-        .maybeSingle();
-      if (data?.value && !error) {
-        set({ aiApiKey: data.value });
+        .select('key, value')
+        .in('key', ['ai_api_key', 'openrouter_api_key']);
+      if (!error && rows?.length) {
+        const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+        const key = map['ai_api_key'] || map['openrouter_api_key'] || DEFAULT_AI_KEY;
+        if (key) set({ aiApiKey: key });
       }
     } catch (error) {
-      console.log('No openrouter_api_key found in settings');
+      console.log('Failed to load AI API key from settings:', error);
     }
   },
 
@@ -38,7 +44,7 @@ export const useAppStore = create((set, get) => ({
       const { error } = await supabase
         .from('app_settings')
         .upsert({
-          key: 'openrouter_api_key',
+          key: 'ai_api_key',
           value: key,
           updated_at: new Date().toISOString(),
         });
@@ -156,6 +162,11 @@ export const useAppStore = create((set, get) => ({
   },
 
   loadProject: async (id) => {
+    // Guard against a malformed route param (NaN) reaching the query layer.
+    if (id === null || id === undefined || Number.isNaN(Number(id))) {
+      throw new Error('Invalid project id');
+    }
+
     // Fetch project
     const { data: project, error: projError } = await supabase
       .from('projects')
@@ -165,25 +176,42 @@ export const useAppStore = create((set, get) => ({
 
     if (projError) throw projError;
 
-    // Fetch messages with their associated transactions
-    const { data: messages, error: msgError } = await supabase
-      .from('messages')
-      .select(`
-        *,
-        transactions (
-          id,
-          type,
-          amount,
-          category_id,
-          category_label,
-          vendor,
-          receipt_uri
-        )
-      `)
-      .eq('project_id', id)
-      .order('created_at', { ascending: true });
+    // Fetch messages with their associated transactions. The embedded
+    // `transactions(...)` select relies on PostgREST detecting the
+    // messages→transactions foreign key. If that relationship can't be
+    // embedded for any reason, the whole project screen used to crash; fall
+    // back to a plain messages query so the chat still loads.
+    let messages = [];
+    try {
+      const { data, error: msgError } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          transactions (
+            id,
+            type,
+            amount,
+            category_id,
+            category_label,
+            vendor,
+            receipt_uri
+          )
+        `)
+        .eq('project_id', id)
+        .order('created_at', { ascending: true });
 
-    if (msgError) throw msgError;
+      if (msgError) throw msgError;
+      messages = data || [];
+    } catch (embedErr) {
+      console.warn('Embedded messages query failed, falling back to plain query:', embedErr?.message);
+      const { data, error: plainErr } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('project_id', id)
+        .order('created_at', { ascending: true });
+      if (plainErr) throw plainErr;
+      messages = (data || []).map((m) => ({ ...m, transactions: [] }));
+    }
 
     // Flatten transaction data onto each message to match old SQLite format
     // UI expects: item.transaction_id, item.transaction_type, item.amount, etc.
@@ -281,8 +309,24 @@ export const useAppStore = create((set, get) => ({
 
   // === TRANSACTIONS ===
 
+  // Internal helper: per-project transaction lock prevents concurrent
+  // addTransaction calls from racing (e.g. user tapping save twice, or
+  // share-intent processing overlapping with manual entry).
+  _acquireTxnLock: async (projectId) => {
+    const locks = get()._txnLocks;
+    while (locks.has(projectId)) {
+      await locks.get(projectId);
+    }
+    let resolveLock;
+    const lockPromise = new Promise((r) => { resolveLock = r; });
+    locks.set(projectId, lockPromise);
+    return () => { locks.delete(projectId); resolveLock(); };
+  },
+
   addTransaction: async (projectId, messageId, type, amount, categoryId, categoryLabel, description, options = {}) => {
-    const userId = useAuthStore.getState().user?.id;
+    const releaseLock = await get()._acquireTxnLock(projectId);
+    try {
+      const userId = useAuthStore.getState().user?.id;
     const {
       vendor = '',
       paymentMethod = '',
@@ -316,6 +360,9 @@ export const useAppStore = create((set, get) => ({
 
     await get().loadProject(projectId);
     await get().loadProjects();
+    } finally {
+      releaseLock();
+    }
   },
 
   updateTransaction: async (id, projectId, fields) => {

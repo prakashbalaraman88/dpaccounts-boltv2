@@ -28,7 +28,7 @@ function ProjectPnlCard({ project, index }) {
         style={styles.pnlCard}
         onPressIn={() => { scale.value = withSpring(0.97, { damping: 15, stiffness: 200 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 200 }); }}
-        onPress={() => router.push(`/project/${project.id}`)}
+        onPress={() => router.push(`/project-dashboard/${project.id}`)}
       >
         <View style={styles.pnlCardHeader}>
           <View style={styles.pnlAvatar}>

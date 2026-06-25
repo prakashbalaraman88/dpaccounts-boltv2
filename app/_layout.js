@@ -5,6 +5,7 @@ import { PaperProvider } from 'react-native-paper';
 import { ThemeProvider } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ShareIntentProvider, useShareIntentContext, ShareIntentModule } from 'expo-share-intent';
+import { hasPendingShares, clearPendingShares } from '../modules/ledge-share-handler';
 import { ActivityIndicator, View, Pressable, ScrollView, Platform } from 'react-native';
 import { Text } from 'react-native-paper';
 import { theme } from '../src/constants/theme';
@@ -78,6 +79,7 @@ class ErrorBoundary extends React.Component {
 
 function CrashGuard({ children }) {
   const [fatal, setFatal] = useState(null);
+  const resetAuth = useAuthStore((s) => s.initialize);
 
   useEffect(() => {
     const ErrorUtils = global.ErrorUtils;
@@ -86,7 +88,7 @@ function CrashGuard({ children }) {
     ErrorUtils.setGlobalHandler((e, isFatal) => {
       console.error('Global error:', e, 'fatal:', isFatal);
       if (isFatal) {
-        // Swallow the fatal: render our screen instead of letting RN abort
+        // Show our screen instead of silently aborting
         setFatal(e?.message || String(e));
       } else if (prev) {
         prev(e, isFatal);
@@ -98,7 +100,16 @@ function CrashGuard({ children }) {
   }, []);
 
   if (fatal) {
-    return <CrashScreen message={fatal} onReset={() => setFatal(null)} />;
+    return (
+      <CrashScreen
+        message={fatal}
+        onReset={() => {
+          setFatal(null);
+          // Force re-initialize auth and stores to clear any corrupted state
+          resetAuth();
+        }}
+      />
+    );
   }
   return children;
 }
@@ -127,6 +138,35 @@ function RootLayoutInner() {
     initialize();
   }, []);
 
+  // ---- NEW: WhatsApp-style native share handler (LedgeShareHandler) ----
+  // The native module copies content:// URIs to persistent cache in
+  // onCreate/onNewIntent BEFORE the JS layer ever sees them. This eliminates
+  // the URI expiry race condition that caused 6 months of intermittent grief.
+  // We poll hasPendingShares() every 1.5s when the app is active to detect
+  // warm-start shares, and use the result alongside expo-share-intent to decide
+  // whether to redirect to /share.
+  const [nativeSharePending, setNativeSharePending] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    let cancelled = false;
+    const check = async () => {
+      if (cancelled) return;
+      try {
+        const has = await hasPendingShares();
+        if (!cancelled) setNativeSharePending(has);
+      } catch {
+        if (!cancelled) setNativeSharePending(false);
+      }
+    };
+    check();
+    const interval = setInterval(check, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Load app data once authenticated and password changed
   useEffect(() => {
     if (session && profile && !profile.must_change_password) {
@@ -134,6 +174,19 @@ function RootLayoutInner() {
       loadSettings();
     }
   }, [session, profile]);
+
+  // A share intent must survive the entire auth flow. On cold start the user
+  // may not be signed in yet (→ /login) or may be forced to change their
+  // password (→ /change-password); in both cases the native share is delivered
+  // before we can show /share. hasShareIntent can also momentarily read false
+  // while auth resolves. So we LATCH that a share is pending and only clear it
+  // once the user actually reaches /share — this guarantees the share is never
+  // lost to a login/password-change/home bounce.
+  const pendingShareRef = useRef(false);
+  if (hasShareIntent) pendingShareRef.current = true;
+  if (nativeSharePending) pendingShareRef.current = true;
+  if (segments[0] === 'share') pendingShareRef.current = false;
+  const shareIsPending = (hasShareIntent || pendingShareRef.current || nativeSharePending) && segments[0] !== 'share';
 
   // Auth-gated routing
   useEffect(() => {
@@ -147,18 +200,23 @@ function RootLayoutInner() {
     } else if (session && profile?.must_change_password && segments[0] !== 'change-password') {
       // Authenticated but must change password
       router.replace('/change-password');
-    } else if (session && profile && !profile.must_change_password && inAuthGroup) {
-      // Authenticated and password changed → go home
+    } else if (session && profile && !profile.must_change_password && inAuthGroup && !shareIsPending) {
+      // Authenticated and password changed → go home, unless a share intent is
+      // waiting to be handled (prevents the home screen from bouncing in front
+      // of the share screen on cold start / right after login).
       router.replace('/');
     }
-  }, [session, profile, isLoading, segments]);
+  }, [session, profile, isLoading, segments, shareIsPending]);
 
-  // Navigate to share screen when a share intent is detected (Android) — only when authenticated
+  // Navigate to the share screen once a share is pending AND the user is fully
+  // authenticated (signed in + password changed). The latch means this fires
+  // even if the share arrived during login or the forced password change.
   useEffect(() => {
-    if (hasShareIntent && session && profile && !profile.must_change_password && segments[0] !== 'share') {
+    if (isLoading) return;
+    if (shareIsPending && session && profile && !profile.must_change_password && segments[0] !== 'share') {
       router.replace('/share');
     }
-  }, [hasShareIntent, session, profile, segments]);
+  }, [shareIsPending, session, profile, segments, isLoading]);
 
   // Reset the share intent once the user LEAVES the share screen, so a stale
   // intent doesn't re-trigger the redirect/gate on later navigations. We must
@@ -167,23 +225,41 @@ function RootLayoutInner() {
   // render that redirects to /share.
   const prevSegment = useRef(segments[0]);
   useEffect(() => {
-    if (prevSegment.current === 'share' && segments[0] !== 'share' && hasShareIntent) {
-      resetShareIntent();
+    if (prevSegment.current === 'share' && segments[0] !== 'share') {
+      if (hasShareIntent) resetShareIntent();
+      if (nativeSharePending) {
+        setNativeSharePending(false);
+        clearPendingShares();
+      }
     }
     prevSegment.current = segments[0];
-  }, [segments[0], hasShareIntent, resetShareIntent]);
+  }, [segments[0], hasShareIntent, resetShareIntent, nativeSharePending]);
 
   // Retry reading the native share intent after the JS listeners are ready.
-  // expo-share-intent can emit the event before the listener attaches on cold start.
+  // expo-share-intent can emit the onChange event before the JS listener
+  // attaches on cold start, so the very first share is silently lost and the
+  // app lands on home instead of /share. A single retry isn't enough on slow
+  // devices, and navigation to /share is also gated on auth being ready — so
+  // we poll getShareIntent a few times (and again once session/profile load)
+  // until the pending intent is recovered.
   useEffect(() => {
-    if (!isShareIntentReady || Platform.OS !== 'android') return;
-    const timer = setTimeout(() => {
-      if (!hasShareIntent) {
+    if (Platform.OS !== 'android') return;
+    if (isLoading || !isShareIntentReady || hasShareIntent) return;
+    let cancelled = false;
+    const attempt = () => {
+      if (cancelled || hasShareIntent) return;
+      try {
         ShareIntentModule?.getShareIntent('');
+      } catch (e) {
+        console.warn('ShareIntentModule.getShareIntent retry failed:', e);
       }
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [isShareIntentReady, hasShareIntent]);
+    };
+    const timers = [300, 900, 1800, 3200].map((d) => setTimeout(attempt, d));
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [isLoading, isShareIntentReady, hasShareIntent, session, profile]);
 
   // Show splash while checking auth
   if (isLoading) {

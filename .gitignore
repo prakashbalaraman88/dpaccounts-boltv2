@@ -36,6 +36,7 @@ yarn-error.*
 
 # local assistant settings
 .claude/
+.omc/
 
 # typescript
 *.tsbuildinfo

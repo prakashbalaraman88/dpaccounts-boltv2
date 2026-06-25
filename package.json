@@ -25,6 +25,7 @@
     "expo-router": "~55.0.16",
     "expo-share-intent": "^6.1.1",
     "expo-status-bar": "~55.0.6",
+    "ledge-share-handler": "file:./modules/ledge-share-handler",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.6",

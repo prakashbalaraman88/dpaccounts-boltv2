@@ -1,0 +1,10 @@
+{
+  "name": "ledge-share-handler",
+  "version": "1.0.0",
+  "description": "WhatsApp-style Android share intent handler for Ledge. Copies content:// URIs to persistent cache in native code before JS sees them.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "peerDependencies": {
+    "expo-modules-core": "*"
+  }
+}

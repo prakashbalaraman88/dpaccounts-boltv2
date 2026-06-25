@@ -220,7 +220,7 @@ export default function HomeScreen() {
       setProjectName('');
       setBudget('');
       if (id) {
-        router.push(`/project/${id}`);
+        router.push(`/project-dashboard/${id}`);
       }
     } catch (error) {
       console.error('Failed to create project:', error);
@@ -361,7 +361,7 @@ export default function HomeScreen() {
       <FlatList
         data={projects}
         renderItem={({ item, index }) => (
-          <ProjectCard item={item} index={index} onPress={(id) => router.push(`/project/${id}`)} />
+          <ProjectCard item={item} index={index} onPress={(id) => router.push(`/project-dashboard/${id}`)} />
         )}
         keyExtractor={(item) => item.id.toString()}
         ListHeaderComponent={ListHeader}
@@ -514,7 +514,7 @@ export default function HomeScreen() {
                     style={[styles.recentItem, idx < recentClients.length - 1 && styles.recentItemBorder]}
                     onPress={() => {
                       setShowRecentClients(false);
-                      router.push(`/project/${project.id}`);
+                      router.push(`/project-dashboard/${project.id}`);
                     }}
                   >
                     <View style={styles.recentAvatar}>

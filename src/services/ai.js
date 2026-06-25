@@ -23,10 +23,11 @@ const BASE_URL_OPENROUTER = 'https://openrouter.ai/api/v1';
 const BASE_URL_WAVESPEED = 'https://llm.wavespeed.ai/v1';
 
 // OpenRouter: primary + fallbacks. All free, all support image input.
+// qwen2.5-vl has been the most reliable free vision model for receipts.
 const OPENROUTER_MODEL_CHAIN = [
-  'google/gemma-4-31b-it:free',
-  'google/gemma-4-26b-a4b-it:free',
-  'nvidia/nemotron-nano-12b-v2-vl:free',
+  'qwen/qwen2.5-vl-7b-instruct:free',
+  'google/gemma-3-4b-it:free',
+  'google/gemma-3-12b-it:free',
 ];
 
 // WaveSpeed: best-price models that worked in testing.
@@ -35,10 +36,10 @@ const OPENROUTER_MODEL_CHAIN = [
 const WAVESPEED_TEXT_MODEL = 'deepseek/deepseek-v3.2';
 const WAVESPEED_VISION_MODEL = 'google/gemini-2.5-flash';
 
-const MAX_ATTEMPTS_PER_MODEL = 2;
-const IMAGE_ATTEMPTS_PER_MODEL = 1;
-const IMAGE_TIMEOUT_MS = 15000;
-const TIMEOUT_MS = 20000;
+const MAX_ATTEMPTS_PER_MODEL = 3;
+const IMAGE_ATTEMPTS_PER_MODEL = 2;
+const IMAGE_TIMEOUT_MS = 30000;
+const TIMEOUT_MS = 25000;
 
 const LOCAL_FAST_PATH_CONFIDENCE = 0.85;
 
@@ -266,6 +267,7 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
   const isImage = Boolean(imageUri);
   const model = isImage ? WAVESPEED_VISION_MODEL : WAVESPEED_TEXT_MODEL;
   const timeoutMs = isImage ? IMAGE_TIMEOUT_MS : TIMEOUT_MS;
+  const maxAttempts = isImage ? IMAGE_ATTEMPTS_PER_MODEL : MAX_ATTEMPTS_PER_MODEL;
 
   const userContent = isImage
     ? [
@@ -274,41 +276,59 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
       ]
     : messageText;
 
-  const resp = await fetchWithTimeout(
-    `${BASE_URL_WAVESPEED}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-        max_tokens: isImage ? 300 : 500,
-      }),
-    },
-    timeoutMs
-  );
+  let lastError = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const resp = await fetchWithTimeout(
+        `${BASE_URL_WAVESPEED}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: userContent },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.1,
+            max_tokens: isImage ? 300 : 500,
+          }),
+        },
+        timeoutMs
+      );
 
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+      if (resp.status === 429) {
+        lastError = new Error('rate-limited (429)');
+        await sleep(isImage ? 800 : 1500 * (attempt + 1));
+        continue;
+      }
+
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        lastError = new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+        if (resp.status >= 400 && resp.status < 500) break;
+        await sleep(1000 * (attempt + 1));
+        continue;
+      }
+
+      const data = await resp.json();
+      const message = data?.choices?.[0]?.message || {};
+      const rawText = message.content || message.reasoning || '';
+      const parsed = extractJson(rawText);
+      if (parsed) return { parsed, model };
+
+      lastError = new Error(`unparseable response: ${String(rawText).slice(0, 120)}`);
+    } catch (e) {
+      lastError = e;
+      if (attempt < maxAttempts - 1) await sleep(800 * (attempt + 1));
+    }
   }
 
-  const data = await resp.json();
-  const message = data?.choices?.[0]?.message || {};
-  const rawText = message.content || message.reasoning || '';
-  const parsed = extractJson(rawText);
-  if (!parsed) {
-    throw new Error(`unparseable response: ${String(rawText).slice(0, 120)}`);
-  }
-  return { parsed, model };
+  throw lastError || new Error('WaveSpeed query failed');
 }
 
 // ---------------------------------------------------------------------------

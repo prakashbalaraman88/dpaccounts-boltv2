@@ -1,0 +1,21 @@
+diff --git a/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt b/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
+index 1234567..89abcde 100644
+--- a/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
++++ b/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
+@@ -207,7 +207,15 @@ class AppContextActivityResultRegistry(
+         }
+ 
+         Lifecycle.Event.ON_DESTROY -> {
+-          unregister(key)
++          // Keep the launcher registration across Activity recreation.
++          // Modules (e.g. expo-image-picker) register launchers once and reuse
++          // them; if we unregister here, those launchers become invalid when
++          // Android recreates the Activity, causing
++          // "Attempting to launch an unregistered ActivityResultLauncher".
++          keyToLifecycleContainers[key]?.let {
++            it.clearObservers()
++            keyToLifecycleContainers.remove(key)
++          }
+         }
+ 
+         else -> Unit
