@@ -14,7 +14,6 @@ function withLedgeShareHandler(config) {
     // 1. Add import for LedgeShareHandlerModule
     const importLine = 'import com.ledge.sharehandler.LedgeShareHandlerModule';
     if (!contents.includes(importLine)) {
-      // Find the first import line and insert our import after it
       const lines = contents.split('\n');
       let lastImportIndex = -1;
       for (let i = 0; i < lines.length; i++) {
@@ -28,14 +27,14 @@ function withLedgeShareHandler(config) {
       }
     }
 
-    // 2. Add onCreate hook after super.onCreate(savedInstanceState)
+    // 2. Add onCreate hook after super.onCreate(...)
     const onCreateHook = '\n    // LedgeShareHandler: copy shared content to cache on cold start\n    LedgeShareHandlerModule.handleIntent(intent, contentResolver, cacheDir)';
 
     if (!modResults.contents.includes('LedgeShareHandlerModule.handleIntent')) {
-      // Try to find super.onCreate(savedInstanceState) and add after it
+      // Handle both super.onCreate(null) and super.onCreate(savedInstanceState)
       modResults.contents = modResults.contents.replace(
-        /super\.onCreate\(savedInstanceState\)(\s*\n)/,
-        `super.onCreate(savedInstanceState)$1${onCreateHook}`
+        /(super\.onCreate\([^)]*\))(\s*\n)/,
+        `$1$2${onCreateHook}`
       );
     }
 
@@ -49,7 +48,6 @@ function withLedgeShareHandler(config) {
 `;
 
     if (!modResults.contents.includes('override fun onNewIntent')) {
-      // Also need to import Intent if not already imported
       if (!modResults.contents.includes('import android.content.Intent')) {
         const lines = modResults.contents.split('\n');
         let lastImportIndex = -1;
@@ -64,7 +62,6 @@ function withLedgeShareHandler(config) {
         }
       }
 
-      // Insert onNewIntent before the last closing brace of the class
       modResults.contents = modResults.contents.replace(
         /\n\}\s*$/,
         `${onNewIntentMethod}}\n`

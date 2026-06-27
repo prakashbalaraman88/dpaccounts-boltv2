@@ -49,3 +49,9 @@ yarn-error.*
 # downloaded build tooling — JDK is re-downloaded by scripts/build-apk.sh
 # (122 MB lib/modules exceeds GitHub's 100 MB file limit; must never be tracked)
 /tools/
+
+# build outputs & logs (generated; large)
+*.apk
+build-log.txt
+build-release-log.txt
+modules/*/android/build/

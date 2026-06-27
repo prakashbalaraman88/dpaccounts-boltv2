@@ -27,7 +27,7 @@ class LedgeShareHandlerModule : Module() {
     }
 
     companion object {
-        private val pendingShares = mutableListOf<Map<String, String>>()
+        val pendingShares = mutableListOf<Map<String, String>>()
 
         fun handleIntent(intent: Intent?, contentResolver: android.content.ContentResolver, cacheDir: File) {
             if (intent == null) return
