@@ -16,11 +16,16 @@
 // The old Gemini/OpenRouter service exposed analyzeMessage(apiKey, text, imageUri);
 // this module keeps the exact same signature.
 
+import { Platform } from 'react-native';
 import { parseTransactionText } from './parser';
 import { CATEGORIES } from '../constants/theme';
 
 const BASE_URL_OPENROUTER = 'https://openrouter.ai/api/v1';
-const BASE_URL_WAVESPEED = 'https://llm.wavespeed.ai/v1';
+// On web the browser blocks cross-origin WaveSpeed calls (no CORS headers).
+// Metro's enhanceMiddleware proxies /proxy/wavespeed/* → llm.wavespeed.ai/v1/*
+// so we use a same-origin relative path in the web preview.
+const BASE_URL_WAVESPEED =
+  Platform.OS === 'web' ? '/proxy/wavespeed' : 'https://llm.wavespeed.ai/v1';
 
 // OpenRouter: primary + fallbacks. All free, all support image input.
 // qwen2.5-vl has been the most reliable free vision model for receipts.
@@ -103,9 +108,11 @@ function extractJson(rawText) {
   if (!rawText) return null;
   if (typeof rawText === 'object') return rawText;
   let text = String(rawText).trim();
+  // Strip markdown fences
   if (text.startsWith('```')) {
-    text = text.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/, '');
+    text = text.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/, '').trim();
   }
+  // Try whole-text parse first
   try {
     const parsedWhole = JSON.parse(text);
     if (parsedWhole && typeof parsedWhole === 'object') return parsedWhole;
@@ -113,15 +120,33 @@ function extractJson(rawText) {
       return extractJson(parsedWhole);
     }
   } catch {
-    // Continue with substring extraction.
+    // Fall through to substring search.
   }
+  // Gemini 2.5-flash "thinking" mode outputs prose before the JSON.
+  // Search specifically for our schema key to skip reasoning text.
+  const schemaKey = '"isTransaction"';
+  const schemaIdx = text.indexOf(schemaKey);
+  if (schemaIdx > 0) {
+    // Walk back to find the opening brace of this object
+    const braceIdx = text.lastIndexOf('{', schemaIdx);
+    if (braceIdx >= 0) {
+      const end = text.lastIndexOf('}');
+      if (end > braceIdx) {
+        try {
+          const parsed = JSON.parse(text.slice(braceIdx, end + 1));
+          if (parsed && typeof parsed === 'object') return parsed;
+        } catch {}
+      }
+    }
+  }
+  // Generic first-{ to last-} fallback
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
   try {
     const parsed = JSON.parse(text.slice(start, end + 1));
     return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -375,9 +400,15 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
               { role: 'system', content: SYSTEM_PROMPT },
               { role: 'user', content: userContent },
             ],
-            response_format: { type: 'json_object' },
+            // response_format omitted — Gemini on WaveSpeed does not support the
+            // OpenAI-style json_object mode and returns a 400/422. The system
+            // prompt already instructs the model to reply with ONLY a JSON object.
             temperature: 0.1,
-            max_tokens: isImage ? 300 : 500,
+            max_tokens: isImage ? 800 : 500,
+            // Disable Gemini 2.5-flash thinking mode — it outputs prose before
+            // the JSON and the response parser must then hunt for the JSON object.
+            // Disabling thinking gives a direct, token-efficient JSON response.
+            ...(isImage ? { enable_thinking: false } : {}),
           }),
         },
         timeoutMs
@@ -391,7 +422,8 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
 
       if (!resp.ok) {
         const body = await resp.text().catch(() => '');
-        lastError = new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+        lastError = new Error(`HTTP ${resp.status}: ${body.slice(0, 400)}`);
+        console.warn('[WaveSpeed] error response:', resp.status, body.slice(0, 400));
         if (resp.status >= 400 && resp.status < 500) break;
         await sleep(1000 * (attempt + 1));
         continue;
@@ -402,7 +434,9 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
       const parsed = parseMessageJson(message);
       if (parsed) return { parsed, model };
 
-      lastError = new Error(`unparseable response: ${summarizeMessageForError(message)}`);
+      const raw = summarizeMessageForError(message);
+      console.warn('[WaveSpeed] unparseable response:', raw);
+      lastError = new Error(`unparseable response: ${raw}`);
     } catch (e) {
       lastError = e;
       if (attempt < maxAttempts - 1) await sleep(800 * (attempt + 1));
