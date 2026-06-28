@@ -45,6 +45,9 @@
     "react-native-worklets": "^0.7.4",
     "zustand": "^5.0.11"
   },
+  "overrides": {
+    "shell-quote": "^1.8.4"
+  },
   "private": true,
   "devDependencies": {
     "@types/react": "~19.2.10",
