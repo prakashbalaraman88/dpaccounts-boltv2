@@ -1,0 +1,1 @@
+- [Expo web on Replit](expo-web-replit.md) — Three required fixes to run Expo/React Native web in Replit: native module safety, host binding, CI mode.

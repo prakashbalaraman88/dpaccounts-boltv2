@@ -31,7 +31,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "RCT_METRO_PORT=5000 npx expo start --web --port 5000"
+args = "CI=1 RCT_METRO_PORT=5000 npx expo start --web --port 5000 --non-interactive"
 waitForPort = 5000
 
 [deployment]
