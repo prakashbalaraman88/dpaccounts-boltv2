@@ -6,14 +6,12 @@ import {
   Pressable,
   Alert,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { Text, IconButton, Modal, Portal, TextInput } from 'react-native-paper';
 import Animated, {
   FadeIn,
   FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,11 +23,6 @@ import { impactLight, impactMedium } from '../../src/utils/haptics';
 function getInitials(name) {
   if (!name) return '??';
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
-}
-
-function getCategoryLabel(id, type) {
-  const cat = CATEGORIES[type]?.find((c) => c.id === id);
-  return cat?.label || id || '—';
 }
 
 export default function ProjectDashboardScreen() {
@@ -55,9 +48,11 @@ export default function ProjectDashboardScreen() {
   const [editBudget, setEditBudget] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // ── Transaction edit state ──────────────────────────────────────────
-  const [editTxn, setEditTxn] = useState(null); // the message being edited
+  // ── Transaction filter + edit state ────────────────────────────────
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'incoming' | 'expense'
+  const [editTxn, setEditTxn] = useState(null);
   const [txnAmount, setTxnAmount] = useState('');
   const [txnVendor, setTxnVendor] = useState('');
   const [txnCategory, setTxnCategory] = useState('');
@@ -75,6 +70,12 @@ export default function ProjectDashboardScreen() {
       return () => { active = false; };
     }, [projectId])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try { await loadProject(projectId); } catch (e) { console.error(e); }
+    finally { setIsRefreshing(false); }
+  }, [projectId]);
 
   const openChat = () => {
     impactMedium();
@@ -190,6 +191,14 @@ export default function ProjectDashboardScreen() {
     [messages]
   );
 
+  const filteredTransactions = useMemo(() => {
+    if (filterType === 'all') return transactions;
+    return transactions.filter((t) => t.transaction_type === filterType);
+  }, [transactions, filterType]);
+
+  const incomeCount   = useMemo(() => transactions.filter((t) => t.transaction_type === 'incoming').length, [transactions]);
+  const expenseCount  = useMemo(() => transactions.filter((t) => t.transaction_type === 'expense').length, [transactions]);
+
   const totalIncoming = currentProject?.total_incoming || 0;
   const totalExpense = currentProject?.total_expense || 0;
   const balance = totalIncoming - totalExpense;
@@ -300,11 +309,19 @@ export default function ProjectDashboardScreen() {
 
       {/* Transaction List */}
       <FlatList
-        data={transactions}
+        data={filteredTransactions}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderTransaction}
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 96 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
         ListHeaderComponent={
           <View>
             {/* Project Card */}
@@ -356,11 +373,33 @@ export default function ProjectDashboardScreen() {
               )}
             </Animated.View>
 
-            {/* Transactions section header */}
+            {/* Transactions section header + filter tabs */}
             {transactions.length > 0 && (
-              <Animated.View entering={FadeIn.delay(100).duration(300)} style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Transactions</Text>
-                <Text style={styles.sectionCount}>{transactions.length}</Text>
+              <Animated.View entering={FadeIn.delay(100).duration(300)}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Transactions</Text>
+                  <Text style={styles.sectionCount}>{filteredTransactions.length}</Text>
+                </View>
+                <View style={styles.filterRow}>
+                  {[
+                    { key: 'all',      label: 'All',     count: transactions.length },
+                    { key: 'incoming', label: 'Income',  count: incomeCount },
+                    { key: 'expense',  label: 'Expense', count: expenseCount },
+                  ].map((tab) => (
+                    <Pressable
+                      key={tab.key}
+                      style={[styles.filterTab, filterType === tab.key && styles.filterTabActive]}
+                      onPress={() => { impactLight(); setFilterType(tab.key); }}
+                    >
+                      <Text style={[styles.filterTabText, filterType === tab.key && styles.filterTabTextActive]}>
+                        {tab.label}
+                      </Text>
+                      <Text style={[styles.filterTabCount, filterType === tab.key && styles.filterTabCountActive]}>
+                        {tab.count}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </Animated.View>
             )}
           </View>
@@ -660,7 +699,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // ── Section header ────────────────────────────────────────────────
+  // ── Section header + filter tabs ─────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -685,6 +724,49 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: theme.colors.outline,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  filterTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+  },
+  filterTabActive: {
+    backgroundColor: theme.colors.primaryContainer,
+    borderColor: theme.colors.outlineVariant,
+  },
+  filterTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.secondary,
+  },
+  filterTabTextActive: {
+    color: theme.colors.primary,
+  },
+  filterTabCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.secondary,
+    backgroundColor: theme.colors.surfaceHighlight,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  filterTabCountActive: {
+    color: theme.colors.primary,
+    backgroundColor: 'rgba(232,232,232,0.12)',
   },
 
   // ── Transaction card ──────────────────────────────────────────────

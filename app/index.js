@@ -1,5 +1,5 @@
 import { useCallback, useState, useMemo, useEffect } from 'react';
-import { View, FlatList, StyleSheet, Pressable, ScrollView, Platform, Keyboard, Dimensions } from 'react-native';
+import { View, FlatList, StyleSheet, Pressable, ScrollView, Platform, Keyboard, Dimensions, RefreshControl } from 'react-native';
 import { Text, Portal, Modal, TextInput, IconButton } from 'react-native-paper';
 import Animated, {
   FadeInDown,
@@ -180,6 +180,7 @@ export default function HomeScreen() {
   const [projectName, setProjectName] = useState('');
   const [budget, setBudget] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Listen for keyboard to adjust modal height on Android
   useEffect(() => {
@@ -199,6 +200,12 @@ export default function HomeScreen() {
       loadProjects();
     }, [])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try { await loadProjects(); } catch (e) { console.error(e); }
+    finally { setIsRefreshing(false); }
+  }, []);
 
   const recentClients = useMemo(() => {
     return [...projects]
@@ -368,6 +375,14 @@ export default function HomeScreen() {
           projects.length === 0 && styles.emptyContainer,
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
         ListEmptyComponent={
           <Animated.View entering={FadeIn.delay(400).duration(800)} style={styles.emptyState}>
             <View style={styles.emptyIconOuter}>
