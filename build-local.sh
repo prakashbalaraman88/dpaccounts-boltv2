@@ -87,6 +87,10 @@ echo "   ✓ -XX:-UsePerfData added to gradle.properties."
 # Belt-and-suspenders: JAVA_TOOL_OPTIONS is read by every JVM unconditionally
 export JAVA_TOOL_OPTIONS="-XX:-UsePerfData"
 
+# Use a fresh Gradle home inside tools/ to avoid corrupted ~/.gradle lock files
+export GRADLE_USER_HOME="$TOOLS_DIR/gradle-home"
+mkdir -p "$GRADLE_USER_HOME"
+
 # ── Step 5: Build the APK ──────────────────────────────────────────────────
 echo "▶ [5/5] Building APK with Gradle (5–15 min first run)..."
 cd android
