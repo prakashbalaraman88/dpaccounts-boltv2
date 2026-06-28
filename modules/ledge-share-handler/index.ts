@@ -1,6 +1,6 @@
-import { requireNativeModule } from 'expo-modules-core';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 
-const LedgeShareHandler = requireNativeModule('LedgeShareHandler');
+const LedgeShareHandler = requireOptionalNativeModule('LedgeShareHandler');
 
 /**
  * Check if there are pending shares without consuming them.
@@ -8,7 +8,7 @@ const LedgeShareHandler = requireNativeModule('LedgeShareHandler');
  */
 export async function hasPendingShares() {
   try {
-    return await LedgeShareHandler.hasPendingShares() || false;
+    return await LedgeShareHandler?.hasPendingShares() || false;
   } catch (e) {
     console.warn('[LedgeShareHandler] hasPendingShares failed:', e);
     return false;
@@ -21,7 +21,7 @@ export async function hasPendingShares() {
  */
 export async function getPendingShares() {
   try {
-    return (await LedgeShareHandler.getPendingShares()) || [];
+    return (await LedgeShareHandler?.getPendingShares()) || [];
   } catch (e) {
     console.warn('[LedgeShareHandler] getPendingShares failed:', e);
     return [];
@@ -33,7 +33,7 @@ export async function getPendingShares() {
  */
 export function clearPendingShares() {
   try {
-    LedgeShareHandler.clearPendingShares();
+    LedgeShareHandler?.clearPendingShares();
   } catch (e) {
     console.warn('[LedgeShareHandler] clearPendingShares failed:', e);
   }
