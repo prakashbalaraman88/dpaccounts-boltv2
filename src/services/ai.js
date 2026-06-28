@@ -101,9 +101,19 @@ function userFacingProviderError(error, provider) {
 
 function extractJson(rawText) {
   if (!rawText) return null;
+  if (typeof rawText === 'object') return rawText;
   let text = String(rawText).trim();
   if (text.startsWith('```')) {
     text = text.replace(/^```[a-z]*\n?/i, '').replace(/```\s*$/, '');
+  }
+  try {
+    const parsedWhole = JSON.parse(text);
+    if (parsedWhole && typeof parsedWhole === 'object') return parsedWhole;
+    if (typeof parsedWhole === 'string' && parsedWhole !== text) {
+      return extractJson(parsedWhole);
+    }
+  } catch {
+    // Continue with substring extraction.
   }
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -116,8 +126,48 @@ function extractJson(rawText) {
   }
 }
 
+function messageToTextCandidates(message) {
+  const candidates = [];
+  const push = (value) => {
+    if (value == null) return;
+    if (typeof value === 'string') {
+      candidates.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === 'string') candidates.push(item);
+        else if (item?.text) candidates.push(item.text);
+        else if (item?.content) push(item.content);
+        else candidates.push(JSON.stringify(item));
+      });
+      return;
+    }
+    candidates.push(JSON.stringify(value));
+  };
+
+  push(message?.content);
+  push(message?.reasoning);
+  push(message?.reasoning_content);
+  push(message?.tool_calls);
+  return candidates.filter(Boolean);
+}
+
+function parseMessageJson(message) {
+  for (const candidate of messageToTextCandidates(message)) {
+    const parsed = extractJson(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function summarizeMessageForError(message) {
+  const text = messageToTextCandidates(message).join(' ').trim();
+  return text ? text.slice(0, 180) : JSON.stringify(message || {}).slice(0, 180);
+}
+
 /** Normalize and validate whatever the model returned. */
-function sanitizeResult(raw, source) {
+function sanitizeResult(raw, source, options = {}) {
   if (!raw || typeof raw !== 'object') return null;
 
   if (!raw.isTransaction) {
@@ -131,7 +181,12 @@ function sanitizeResult(raw, source) {
     };
   }
 
-  const type = raw.type === 'incoming' ? 'incoming' : raw.type === 'expense' ? 'expense' : null;
+  const type =
+    raw.type === 'incoming'
+      ? 'incoming'
+      : raw.type === 'expense'
+        ? 'expense'
+        : options.defaultType || null;
   const amount = Number(raw.amount);
   if (!type || !isFinite(amount) || amount <= 0) return null;
 
@@ -265,11 +320,10 @@ async function queryOpenRouter(apiKey, messageText, imageDataUri) {
 
         const data = await resp.json();
         const message = data?.choices?.[0]?.message || {};
-        const rawText = message.content || message.reasoning || '';
-        const parsed = extractJson(rawText);
+        const parsed = parseMessageJson(message);
         if (parsed) return { parsed, model };
 
-        lastError = new Error(`unparseable response: ${String(rawText).slice(0, 120)}`);
+        lastError = new Error(`unparseable response: ${summarizeMessageForError(message)}`);
       } catch (e) {
         lastError = e;
       }
@@ -337,11 +391,10 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
 
       const data = await resp.json();
       const message = data?.choices?.[0]?.message || {};
-      const rawText = message.content || message.reasoning || '';
-      const parsed = extractJson(rawText);
+      const parsed = parseMessageJson(message);
       if (parsed) return { parsed, model };
 
-      lastError = new Error(`unparseable response: ${String(rawText).slice(0, 120)}`);
+      lastError = new Error(`unparseable response: ${summarizeMessageForError(message)}`);
     } catch (e) {
       lastError = e;
       if (attempt < maxAttempts - 1) await sleep(800 * (attempt + 1));
@@ -393,7 +446,9 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
           text || 'Analyze this receipt/bill image and extract the transaction details.',
           imageUri
         );
-        const sanitized = sanitizeResult(parsed, `wavespeed:${model}`);
+        const sanitized = sanitizeResult(parsed, `wavespeed:${model}`, {
+          defaultType: imageUri ? 'expense' : null,
+        });
         if (sanitized) return sanitized;
       } else {
         const imageDataUri = imageUri ? await toDataUri(imageUri) : null;
@@ -402,7 +457,9 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
           text || 'Analyze this receipt/bill image and extract the transaction details.',
           imageDataUri
         );
-        const sanitized = sanitizeResult(parsed, `openrouter:${model}`);
+        const sanitized = sanitizeResult(parsed, `openrouter:${model}`, {
+          defaultType: imageUri ? 'expense' : null,
+        });
         if (sanitized) return sanitized;
       }
     } catch (e) {
