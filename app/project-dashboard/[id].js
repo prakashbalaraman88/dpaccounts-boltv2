@@ -197,9 +197,14 @@ export default function ProjectDashboardScreen() {
   const budgetPercent = budget > 0 ? Math.min((totalExpense / budget) * 100, 100) : 0;
 
   // ── Render helpers ──────────────────────────────────────────────────
-  const renderTransaction = ({ item, index }) => {
+  const renderTransaction = ({ item }) => {
     const isIncoming = item.transaction_type === 'incoming';
-    const color = isIncoming ? theme.colors.incoming : theme.colors.expense;
+    const color    = isIncoming ? theme.colors.incoming : theme.colors.expense;
+    const bgColor  = isIncoming ? theme.colors.incomingBg : theme.colors.expenseBg;
+    const catList  = CATEGORIES[item.transaction_type] || [];
+    const catDef   = catList.find((c) => c.id === item.category_id);
+    const icon     = catDef?.icon || (isIncoming ? 'arrow-down-circle' : 'arrow-up-circle');
+    const catLabel = item.category_label || catDef?.label || (isIncoming ? 'Payment' : 'Expense');
 
     return (
       <Pressable
@@ -207,42 +212,37 @@ export default function ProjectDashboardScreen() {
         onPress={() => openEditTxn(item)}
         android_ripple={{ color: 'rgba(255,255,255,0.04)', borderless: false }}
       >
-        {/* Left accent bar */}
-        <View style={[styles.txnAccent, { backgroundColor: color }]} />
+        {/* Category icon */}
+        <View style={[styles.txnIcon, { backgroundColor: bgColor }]}>
+          <IconButton icon={icon} iconColor={color} size={20} style={{ margin: 0 }} />
+        </View>
 
-        <View style={styles.txnBody}>
-          <View style={styles.txnTopRow}>
-            <Text style={styles.txnDescription} numberOfLines={1}>
-              {item.content || 'Transaction'}
-            </Text>
-            <Text style={[styles.txnAmount, { color }]}>
-              {isIncoming ? '+' : '-'}{formatRupees(item.amount || 0)}
-            </Text>
-          </View>
+        {/* Label + vendor */}
+        <View style={styles.txnContent}>
+          <Text style={styles.txnTitle} numberOfLines={1}>{catLabel}</Text>
+          <Text style={styles.txnSub} numberOfLines={1}>
+            {item.vendor ? item.vendor + '  ·  ' : ''}{formatTime(item.created_at)}
+          </Text>
+        </View>
 
-          <View style={styles.txnBottomRow}>
-            <Text style={styles.txnMeta}>
-              {getCategoryLabel(item.category_id, item.transaction_type)}
-              {item.vendor ? ` · ${item.vendor}` : ''}
-              {' · '}{formatTime(item.created_at)}
-            </Text>
-
-            <View style={styles.txnActions}>
-              <Pressable
-                style={styles.txnActionBtn}
-                onPress={(e) => { e.stopPropagation(); openEditTxn(item); }}
-                hitSlop={8}
-              >
-                <IconButton icon="pencil-outline" iconColor={theme.colors.secondary} size={15} style={{ margin: 0 }} />
-              </Pressable>
-              <Pressable
-                style={styles.txnActionBtn}
-                onPress={(e) => { e.stopPropagation(); handleDeleteTxn(item); }}
-                hitSlop={8}
-              >
-                <IconButton icon="trash-can-outline" iconColor={theme.colors.expense} size={15} style={{ margin: 0 }} />
-              </Pressable>
-            </View>
+        {/* Amount + actions */}
+        <View style={styles.txnRight}>
+          <Text style={[styles.txnAmount, { color }]}>
+            {isIncoming ? '+' : '-'}{formatRupees(item.amount || 0)}
+          </Text>
+          <View style={styles.txnActions}>
+            <Pressable
+              onPress={(e) => { e.stopPropagation(); openEditTxn(item); }}
+              hitSlop={10}
+            >
+              <IconButton icon="pencil-outline" iconColor={theme.colors.secondary} size={14} style={{ margin: 0 }} />
+            </Pressable>
+            <Pressable
+              onPress={(e) => { e.stopPropagation(); handleDeleteTxn(item); }}
+              hitSlop={10}
+            >
+              <IconButton icon="trash-can-outline" iconColor={theme.colors.expense} size={14} style={{ margin: 0 }} />
+            </Pressable>
           </View>
         </View>
       </Pressable>
@@ -690,56 +690,52 @@ const styles = StyleSheet.create({
   // ── Transaction card ──────────────────────────────────────────────
   txnCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
     marginBottom: 8,
+    padding: 12,
+    paddingRight: 8,
+    gap: 12,
     borderWidth: 1,
     borderColor: theme.colors.outline,
-    overflow: 'hidden',
   },
-  txnAccent: {
-    width: 3,
-    borderTopLeftRadius: 14,
-    borderBottomLeftRadius: 14,
+  txnIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
-  txnBody: {
+  txnContent: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    gap: 3,
   },
-  txnTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 5,
-  },
-  txnDescription: {
-    flex: 1,
+  txnTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: theme.colors.onSurface,
+    letterSpacing: 0.1,
+  },
+  txnSub: {
+    fontSize: 12,
+    color: theme.colors.secondary,
+    fontWeight: '400',
+  },
+  txnRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+    flexShrink: 0,
   },
   txnAmount: {
     fontSize: 15,
     fontWeight: '700',
-  },
-  txnBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  txnMeta: {
-    flex: 1,
-    fontSize: 11,
-    color: theme.colors.secondary,
-    fontWeight: '500',
+    letterSpacing: 0.2,
   },
   txnActions: {
     flexDirection: 'row',
-    gap: 2,
-  },
-  txnActionBtn: {
-    padding: 2,
+    marginTop: 2,
   },
 
   // ── FAB ───────────────────────────────────────────────────────────
