@@ -82,7 +82,7 @@ chmod +x gradlew
 ./gradlew assembleDebug \
   --no-daemon \
   --console=plain \
-  -Dorg.gradle.jvmargs="-Xmx2g" \
+  -Dorg.gradle.jvmargs="-Xmx2g -XX:-UsePerfData -XX:-Tiered" \
   2>&1 | tee "$WORKSPACE/build-release-log.txt"
 
 echo ""
