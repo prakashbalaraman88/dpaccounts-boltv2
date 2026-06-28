@@ -46,6 +46,9 @@ yarn-error.*
 /android
 .worktrees/
 
+# dotslash / devtools cache — never track binary caches
+.cache/
+
 # downloaded build tooling — JDK is re-downloaded by scripts/build-apk.sh
 # (122 MB lib/modules exceeds GitHub's 100 MB file limit; must never be tracked)
 /tools/

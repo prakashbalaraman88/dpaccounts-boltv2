@@ -45,3 +45,6 @@ yarn-error.*
 # local assistant settings + test assets not needed in builds
 .claude/
 scripts/test-assets/
+
+# dotslash / devtools binary cache — causes rmdir EACCES on EAS upload
+.cache/
