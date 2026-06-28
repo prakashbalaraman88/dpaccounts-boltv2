@@ -74,6 +74,15 @@ npx expo prebuild --platform android --clean
 echo "sdk.dir=$ANDROID_SDK_DIR" > android/local.properties
 echo "   ✓ android/local.properties written."
 
+# Disable JVM perf-data (causes SIGBUS in sandboxed environments)
+GRADLE_PROPS="android/gradle.properties"
+if ! grep -q "UsePerfData" "$GRADLE_PROPS" 2>/dev/null; then
+  echo "" >> "$GRADLE_PROPS"
+  echo "# Disable JVM perf-data mmap to prevent SIGBUS in sandbox" >> "$GRADLE_PROPS"
+  echo 'org.gradle.jvmargs=-Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:-UsePerfData' >> "$GRADLE_PROPS"
+  echo "   ✓ JVM sandbox fix written to gradle.properties."
+fi
+
 # ── Step 5: Build the APK ──────────────────────────────────────────────────
 echo "▶ [5/5] Building APK with Gradle (5–15 min first run)..."
 cd android
@@ -82,7 +91,6 @@ chmod +x gradlew
 ./gradlew assembleDebug \
   --no-daemon \
   --console=plain \
-  -Dorg.gradle.jvmargs="-Xmx2g -XX:-UsePerfData -XX:-Tiered" \
   2>&1 | tee "$WORKSPACE/build-release-log.txt"
 
 echo ""
