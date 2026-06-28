@@ -15,6 +15,7 @@ export const useAppStore = create((set, get) => ({
   messages: [],
   isLoading: false,
   aiApiKey: DEFAULT_AI_KEY,
+  overallCategoryBreakdown: [],
   // A project-level lock so rapid transaction saves (e.g. user tapping
   // multiple categories or concurrent share-intent processing) never race.
   _txnLocks: new Map(),
