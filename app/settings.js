@@ -49,9 +49,8 @@ export default function SettingsScreen() {
 
   const providerName = useMemo(() => {
     if (!apiKey) return 'OpenRouter / WaveSpeed';
-    if (apiKey.startsWith('wsk_')) return 'WaveSpeed';
     if (apiKey.startsWith('sk-or-v1-')) return 'OpenRouter';
-    return 'OpenRouter / WaveSpeed';
+    return 'WaveSpeed';
   }, [apiKey]);
 
   // Sync local state when store loads the persisted key

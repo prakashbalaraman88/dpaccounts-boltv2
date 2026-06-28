@@ -35,6 +35,19 @@ import { impactLight, impactMedium, impactHeavy, notificationSuccess, notificati
 import { useAppStore } from '../../src/stores/appStore';
 import { analyzeMessage } from '../../src/services/ai';
 import { uploadReceiptImage } from '../../src/services/supabase';
+import { clearShareHandoff, getShareHandoff } from '../../src/utils/shareHandoff';
+
+function getSharedParamValue(value) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw == null) return '';
+  const text = String(raw);
+  if (!/%[0-9A-Fa-f]{2}/.test(text)) return text;
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
 
 // Animated action button - uses Animated.View + Pressable
 function ActionButton({ icon, onPress, color, size = 22, style, haptic = true }) {
@@ -93,7 +106,7 @@ function CategoryItem({ category, onPress }) {
 }
 
 export default function ProjectChat() {
-  const { id, sharedImage, sharedText, shareTs } = useLocalSearchParams();
+  const { id, sharedImage, sharedText, shareTs, shareId } = useLocalSearchParams();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const projectId = parseInt(id);
@@ -136,6 +149,7 @@ export default function ProjectChat() {
   // Surfaces a load failure as a friendly screen instead of letting an
   // unhandled rejection from loadProject bubble up to the crash guard.
   const [loadError, setLoadError] = useState(null);
+  const [storedShare, setStoredShare] = useState(null);
 
   // Listen for keyboard to adjust edit modal height on Android
   useEffect(() => {
@@ -171,6 +185,20 @@ export default function ProjectChat() {
     }, [projectId])
   );
 
+  useEffect(() => {
+    let active = true;
+    const idValue = getSharedParamValue(shareId);
+    if (!idValue) {
+      setStoredShare(null);
+      return () => { active = false; };
+    }
+
+    getShareHandoff(idValue).then((share) => {
+      if (active) setStoredShare(share);
+    });
+    return () => { active = false; };
+  }, [shareId]);
+
   // Chat renders as an INVERTED list (newest at the bottom, like WhatsApp):
   // no scrollToEnd hacks, and FlatList virtualization starts from the
   // latest messages instead of cutting the chat off after 10 rows.
@@ -193,6 +221,10 @@ export default function ProjectChat() {
   const lastSharedImage = useRef(null);
   const lastSharedText = useRef(null);
   const isProcessingShare = useRef(false);
+  const shareHandoffId = getSharedParamValue(shareId);
+  const effectiveSharedImage = sharedImage || storedShare?.imageUri || '';
+  const effectiveSharedText = sharedText || storedShare?.text || '';
+  const effectiveShareTs = shareTs || storedShare?.createdAt || '';
 
   // Helper: copy a content:// URI into our cache before the sender revokes it.
   const copySharedUriToCache = async (imageUri) => {
@@ -214,8 +246,8 @@ export default function ProjectChat() {
   // Fully fenced: in release builds an unhandled rejection here kills the
   // whole app, so every step is caught and surfaced as a chat message.
   useEffect(() => {
-    if (!sharedImage || !currentProject || isSending || isProcessingShare.current) return;
-    const shareKey = `${sharedImage}:${shareTs || ''}`;
+    if (!effectiveSharedImage || !currentProject || isSending || isProcessingShare.current) return;
+    const shareKey = `${effectiveSharedImage}:${effectiveShareTs || ''}:${shareHandoffId || ''}`;
     if (lastSharedImage.current === shareKey) return;
     lastSharedImage.current = shareKey;
     isProcessingShare.current = true;
@@ -223,12 +255,7 @@ export default function ProjectChat() {
 
     (async () => {
       try {
-        let imageUri;
-        try {
-          imageUri = decodeURIComponent(String(sharedImage));
-        } catch {
-          imageUri = String(sharedImage);
-        }
+        let imageUri = getSharedParamValue(effectiveSharedImage);
         if (imageUri.startsWith('/')) {
           imageUri = 'file://' + imageUri;
         }
@@ -286,18 +313,15 @@ export default function ProjectChat() {
         }
 
         let promptText = 'Analyze this image (receipt, bill, or payment-app screenshot) and extract the transaction details.';
-        if (sharedText) {
-          try {
-            const text = decodeURIComponent(String(sharedText));
-            if (text) {
-              promptText = `Text shared with the image: "${text}". ${promptText}`;
-            }
-          } catch {
-            // ignore decoding errors
+        if (effectiveSharedText) {
+          const text = getSharedParamValue(effectiveSharedText);
+          if (text) {
+            promptText = `Text shared with the image: "${text}". ${promptText}`;
           }
         }
 
         await processWithAI(promptText, imageForAI, uploadPromise);
+        await clearShareHandoff(shareHandoffId);
       } catch (e) {
         console.error('Shared image processing failed:', e);
         await addMessage(
@@ -310,14 +334,14 @@ export default function ProjectChat() {
         setIsSending(false);
       }
     })();
-  }, [sharedImage, sharedText, currentProject, isSending, projectId, shareTs, aiApiKey]);
+  }, [effectiveSharedImage, effectiveSharedText, currentProject, isSending, projectId, effectiveShareTs, aiApiKey, shareHandoffId]);
 
   // Auto-process shared TEXT (GPay and many apps share text, not images).
   // If an image was also shared we skip the separate text effect; the image
   // effect already includes the shared text in its prompt.
   useEffect(() => {
-    if (!sharedText || sharedImage || !currentProject || isSending || isProcessingShare.current) return;
-    const shareKey = `${sharedText}:${shareTs || ''}`;
+    if (!effectiveSharedText || effectiveSharedImage || !currentProject || isSending || isProcessingShare.current) return;
+    const shareKey = `${effectiveSharedText}:${effectiveShareTs || ''}:${shareHandoffId || ''}`;
     if (lastSharedText.current === shareKey) return;
     lastSharedText.current = shareKey;
     isProcessingShare.current = true;
@@ -325,14 +349,10 @@ export default function ProjectChat() {
 
     (async () => {
       try {
-        let text;
-        try {
-          text = decodeURIComponent(String(sharedText));
-        } catch {
-          text = String(sharedText);
-        }
+        let text = getSharedParamValue(effectiveSharedText);
         await addMessage(projectId, 'text', text, null, 'user');
         await processWithAI(text);
+        await clearShareHandoff(shareHandoffId);
       } catch (e) {
         console.error('Shared text processing failed:', e);
         await addMessage(
@@ -345,7 +365,7 @@ export default function ProjectChat() {
         setIsSending(false);
       }
     })();
-  }, [sharedText, sharedImage, currentProject, isSending, projectId, shareTs]);
+  }, [effectiveSharedText, effectiveSharedImage, currentProject, isSending, projectId, effectiveShareTs, shareHandoffId]);
 
   // receiptUrl may be a string OR a pending upload Promise — it's resolved
   // at category-save time so the AI never waits on the upload.

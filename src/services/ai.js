@@ -76,7 +76,27 @@ Examples:
 // ---------------------------------------------------------------------------
 
 function isWaveSpeedKey(apiKey) {
-  return typeof apiKey === 'string' && apiKey.startsWith('wsk_');
+  return typeof apiKey === 'string' && apiKey.trim() !== '' && !apiKey.startsWith('sk-or-v1-');
+}
+
+function userFacingProviderError(error, provider) {
+  const message = String(error?.message || 'unknown error');
+  if (/download media error|Provided image is not valid|Failed to read image|Image read timed out/i.test(message)) {
+    return `${provider} could not read the receipt image URL. Please try sharing again; if it repeats, the receipt storage URL is not reachable by the AI provider.`;
+  }
+  if (/401|403|unauthorized|forbidden|invalid api key/i.test(message)) {
+    return `${provider} rejected the API key. Please re-save the AI API key in Settings.`;
+  }
+  if (/404|does not exist|do not have access/i.test(message)) {
+    return `${provider} model access failed. Please check the configured AI provider/model.`;
+  }
+  if (/429|rate-limited/i.test(message)) {
+    return `${provider} is rate-limiting requests right now. Please try again in a minute.`;
+  }
+  if (/timeout|aborted/i.test(message)) {
+    return `${provider} took too long to analyze the receipt. Please try again.`;
+  }
+  return `${provider} image analysis failed: ${message.slice(0, 180)}`;
 }
 
 function extractJson(rawText) {
@@ -347,6 +367,8 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
  */
 export async function analyzeMessage(apiKey, messageText, imageUri = null) {
   const text = (messageText || '').trim();
+  let providerError = null;
+  const providerName = isWaveSpeedKey(apiKey) ? 'WaveSpeed' : 'OpenRouter';
 
   // 1) Local fast path for plain text
   const local = imageUri ? null : parseTransactionText(text);
@@ -384,6 +406,7 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
         if (sanitized) return sanitized;
       }
     } catch (e) {
+      providerError = e;
       console.warn('LLM analysis failed:', e.message);
     }
   }
@@ -395,7 +418,7 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
     return {
       isTransaction: false,
       reply: apiKey
-        ? 'The AI service is busy right now. Please try the image again in a minute, or type the amount as text.'
+        ? userFacingProviderError(providerError, providerName)
         : 'Receipt image analysis needs an AI API key — ask your admin to set it in Settings.',
       source: 'fallback',
     };

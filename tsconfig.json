@@ -1,5 +1,14 @@
 {
   "compilerOptions": {},
   "extends": "expo/tsconfig.base",
-  "exclude": ["supabase-edge-function.ts"]
+  "exclude": [
+    "supabase-edge-function.ts",
+    "android",
+    "ios",
+    "node_modules",
+    "tools",
+    ".expo",
+    ".config",
+    ".local"
+  ]
 }

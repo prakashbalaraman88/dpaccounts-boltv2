@@ -27,6 +27,8 @@ export const isSupabaseConfigured = () => true;
 // ---------------------------------------------------------------------------
 
 const UPLOAD_TIMEOUT_MS = 25000;
+const PUBLIC_URL_CHECK_MS = 8000;
+const SIGNED_RECEIPT_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 function base64ToArrayBuffer(base64) {
   const binary = atob(base64);
@@ -76,6 +78,19 @@ async function imageToArrayBuffer(imageUri) {
     throw new Error('Receipt image is empty');
   }
   return { arrayBuffer, contentType };
+}
+
+async function isFetchableReceiptUrl(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PUBLIC_URL_CHECK_MS);
+  try {
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -131,5 +146,17 @@ export async function uploadReceiptImage(imageUri, projectId) {
     throw new Error('Could not generate public URL for uploaded receipt');
   }
 
-  return urlData.publicUrl;
+  if (await isFetchableReceiptUrl(urlData.publicUrl)) {
+    return urlData.publicUrl;
+  }
+
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from('receipts')
+    .createSignedUrl(data.path, SIGNED_RECEIPT_URL_TTL_SECONDS);
+
+  if (signedError || !signedData?.signedUrl) {
+    throw new Error(`Receipt URL is not publicly readable and signed URL failed: ${signedError?.message || 'unknown error'}`);
+  }
+
+  return signedData.signedUrl;
 }

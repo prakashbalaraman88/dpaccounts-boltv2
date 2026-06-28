@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   FlatList,
@@ -22,6 +22,7 @@ import { getPendingShares, clearPendingShares } from '../modules/ledge-share-han
 import { theme, formatRupees } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
 import { impactLight } from '../src/utils/haptics';
+import { saveShareHandoff } from '../src/utils/shareHandoff';
 
 // ---------------------------------------------------------------------------
 // Project card
@@ -87,6 +88,7 @@ export default function ShareScreen() {
   const [shareData, setShareData] = useState(null);
   // Null = still resolving; true/false = done loading.
   const [isReady, setIsReady] = useState(false);
+  const resolveAttempts = useRef(0);
 
   // Load projects on mount.
   useEffect(() => { loadProjects(); }, []);
@@ -110,6 +112,7 @@ export default function ShareScreen() {
           text: share.text || null,
           source: 'native',
         });
+        resolveAttempts.current = 0;
         setIsReady(true);
         return;
       }
@@ -129,15 +132,24 @@ export default function ShareScreen() {
       }
 
       setShareData({ imageUri: imageUri ?? null, text: text ?? null, source: 'expo' });
+      resolveAttempts.current = 0;
       setIsReady(true);
       return;
     }
 
     // Nothing yet — mark ready with no data so we can show the empty state.
+    if (resolveAttempts.current < 12) {
+      resolveAttempts.current += 1;
+      setIsReady(false);
+      setTimeout(resolveShareData, 250);
+      return;
+    }
+
     setIsReady(true);
   }, [hasShareIntent, shareIntent]);
 
   useEffect(() => {
+    resolveAttempts.current = 0;
     resolveShareData();
   }, [resolveShareData]);
 
@@ -151,15 +163,13 @@ export default function ShareScreen() {
     router.replace('/');
   };
 
-  const handleSelectProject = (project) => {
+  const handleSelectProject = async (project) => {
     if (!shareData) return;
 
-    // Clear intent state BEFORE navigating — a lingering hasShareIntent can
-    // cause _layout to redirect back to /share after navigation.
-    resetShareIntent();
-    clearPendingShares();
+    // Persist before navigation so the receipt survives route or intent loss.
+    const savedShare = await saveShareHandoff(shareData);
 
-    const params = [];
+    const params = [`shareId=${encodeURIComponent(savedShare.id)}`];
     if (shareData.imageUri) {
       params.push(`sharedImage=${encodeURIComponent(shareData.imageUri)}`);
     }
@@ -169,6 +179,9 @@ export default function ShareScreen() {
     params.push(`shareTs=${Date.now()}`);
     const query = params.length > 0 ? `?${params.join('&')}` : '';
     router.replace(`/project/${project.id}${query}`);
+
+    resetShareIntent();
+    clearPendingShares();
   };
 
   // ---------------------------------------------------------------------------

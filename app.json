@@ -41,10 +41,12 @@
         {
           "androidIntentFilters": [
             "image/*",
-            "text/*"
+            "text/*",
+            "*/*"
           ],
           "androidMultiIntentFilters": [
-            "image/*"
+            "image/*",
+            "*/*"
           ]
         }
       ],
