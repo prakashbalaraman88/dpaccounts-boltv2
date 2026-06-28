@@ -398,6 +398,7 @@ export default function ProjectChat() {
           receiptUri: receiptUrl || null,
         });
         setSelectedType(result.type);
+        Keyboard.dismiss();
         setShowCategoryModal(true);
       } else {
         await addMessage(projectId, 'text', result.reply || 'I couldn\'t detect a transaction. Try messages like "Received 1,00,000" or "Paid 50,000 to carpenter".', null, 'bot');
