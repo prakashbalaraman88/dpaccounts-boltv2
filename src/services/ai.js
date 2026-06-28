@@ -367,9 +367,11 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
               { role: 'system', content: SYSTEM_PROMPT },
               { role: 'user', content: userContent },
             ],
-            response_format: { type: 'json_object' },
+            // response_format omitted — Gemini on WaveSpeed does not support the
+            // OpenAI-style json_object mode and returns a 400/422. The system
+            // prompt already instructs the model to reply with ONLY a JSON object.
             temperature: 0.1,
-            max_tokens: isImage ? 300 : 500,
+            max_tokens: isImage ? 600 : 500,
           }),
         },
         timeoutMs
@@ -383,7 +385,8 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
 
       if (!resp.ok) {
         const body = await resp.text().catch(() => '');
-        lastError = new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+        lastError = new Error(`HTTP ${resp.status}: ${body.slice(0, 400)}`);
+        console.warn('[WaveSpeed] error response:', resp.status, body.slice(0, 400));
         if (resp.status >= 400 && resp.status < 500) break;
         await sleep(1000 * (attempt + 1));
         continue;
@@ -394,7 +397,9 @@ async function queryWaveSpeed(apiKey, messageText, imageUri) {
       const parsed = parseMessageJson(message);
       if (parsed) return { parsed, model };
 
-      lastError = new Error(`unparseable response: ${summarizeMessageForError(message)}`);
+      const raw = summarizeMessageForError(message);
+      console.warn('[WaveSpeed] unparseable response:', raw);
+      lastError = new Error(`unparseable response: ${raw}`);
     } catch (e) {
       lastError = e;
       if (attempt < maxAttempts - 1) await sleep(800 * (attempt + 1));
