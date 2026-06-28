@@ -184,9 +184,13 @@ export default function ShareScreen() {
         entering={FadeIn.duration(300)}
         style={[styles.header, { paddingTop: Math.max(16, insets.top + 8) }]}
       >
-        <Pressable onPress={handleClose} style={styles.closeButton} hitSlop={8}>
-          <IconButton icon="close" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0 }} />
-        </Pressable>
+        <IconButton
+          icon="close"
+          iconColor={theme.colors.onSurface}
+          size={22}
+          onPress={handleClose}
+          style={styles.closeButton}
+        />
         <View style={styles.headerTitleWrap}>
           <Text style={styles.headerTitle}>Share to Ledge</Text>
           <Text style={styles.headerSubtitle}>
