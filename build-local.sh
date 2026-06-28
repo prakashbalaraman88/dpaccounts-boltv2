@@ -74,14 +74,18 @@ npx expo prebuild --platform android --clean
 echo "sdk.dir=$ANDROID_SDK_DIR" > android/local.properties
 echo "   ✓ android/local.properties written."
 
-# Disable JVM perf-data (causes SIGBUS in sandboxed environments)
+# Patch org.gradle.jvmargs in gradle.properties to add -XX:-UsePerfData
+# (UsePerfData mmap causes SIGBUS in sandboxed Linux environments)
 GRADLE_PROPS="android/gradle.properties"
-if ! grep -q "UsePerfData" "$GRADLE_PROPS" 2>/dev/null; then
-  echo "" >> "$GRADLE_PROPS"
-  echo "# Disable JVM perf-data mmap to prevent SIGBUS in sandbox" >> "$GRADLE_PROPS"
-  echo 'org.gradle.jvmargs=-Xmx2g -XX:+HeapDumpOnOutOfMemoryError -XX:-UsePerfData' >> "$GRADLE_PROPS"
-  echo "   ✓ JVM sandbox fix written to gradle.properties."
+if grep -q "^org.gradle.jvmargs" "$GRADLE_PROPS" 2>/dev/null; then
+  sed -i 's/^org.gradle.jvmargs=.*/& -XX:-UsePerfData/' "$GRADLE_PROPS"
+else
+  echo 'org.gradle.jvmargs=-Xmx2g -XX:-UsePerfData' >> "$GRADLE_PROPS"
 fi
+echo "   ✓ -XX:-UsePerfData added to gradle.properties."
+
+# Belt-and-suspenders: JAVA_TOOL_OPTIONS is read by every JVM unconditionally
+export JAVA_TOOL_OPTIONS="-XX:-UsePerfData"
 
 # ── Step 5: Build the APK ──────────────────────────────────────────────────
 echo "▶ [5/5] Building APK with Gradle (5–15 min first run)..."
