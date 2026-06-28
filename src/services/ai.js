@@ -21,7 +21,11 @@ import { parseTransactionText } from './parser';
 import { CATEGORIES } from '../constants/theme';
 
 const BASE_URL_OPENROUTER = 'https://openrouter.ai/api/v1';
-const BASE_URL_WAVESPEED = 'https://llm.wavespeed.ai/v1';
+// On web the browser blocks cross-origin WaveSpeed calls (no CORS headers).
+// Metro's enhanceMiddleware proxies /proxy/wavespeed/* → llm.wavespeed.ai/v1/*
+// so we use a same-origin relative path in the web preview.
+const BASE_URL_WAVESPEED =
+  Platform.OS === 'web' ? '/proxy/wavespeed' : 'https://llm.wavespeed.ai/v1';
 
 // OpenRouter: primary + fallbacks. All free, all support image input.
 // qwen2.5-vl has been the most reliable free vision model for receipts.
@@ -469,17 +473,6 @@ export async function analyzeMessage(apiKey, messageText, imageUri = null) {
 
   // 2) LLM path
   if (apiKey) {
-    // WaveSpeed's API does not send CORS headers, so browser fetch() blocks it
-    // entirely. On the web preview, skip WaveSpeed for images and return a
-    // clear message — the Android app (native fetch) works fine.
-    if (isWaveSpeedKey(apiKey) && imageUri && Platform.OS === 'web') {
-      return {
-        isTransaction: false,
-        reply: 'Receipt image analysis requires the Android app — WaveSpeed is blocked by browser CORS in the web preview. Share the image from your phone instead.',
-        source: 'fallback',
-      };
-    }
-
     try {
       if (isWaveSpeedKey(apiKey)) {
         const { parsed, model } = await queryWaveSpeed(
