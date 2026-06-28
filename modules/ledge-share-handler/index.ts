@@ -4,24 +4,33 @@ const LedgeShareHandler = requireOptionalNativeModule('LedgeShareHandler');
 
 /**
  * Check if there are pending shares without consuming them.
- * Use this to detect if a redirect to the share screen is needed.
+ * Returns true if the native module has a cached share waiting for JS.
  */
-export async function hasPendingShares() {
+export async function hasPendingShares(): Promise<boolean> {
   try {
-    return await LedgeShareHandler?.hasPendingShares() || false;
+    return LedgeShareHandler?.hasPendingShares() ?? false;
   } catch (e) {
     console.warn('[LedgeShareHandler] hasPendingShares failed:', e);
     return false;
   }
 }
 
+export interface PendingShare {
+  type: 'file' | 'text';
+  path?: string;
+  mimeType?: string;
+  text?: string;
+}
+
 /**
- * Get any pending shares that arrived while the app was closed (cold start)
- * or while the JS layer was not active. Returns and clears the pending list.
+ * Get all pending shares and clear the queue.
+ * The native module pre-copies content:// URIs to stable file:// paths in
+ * OnCreate/OnNewIntent — by the time this is called, paths are always safe.
  */
-export async function getPendingShares() {
+export async function getPendingShares(): Promise<PendingShare[]> {
   try {
-    return (await LedgeShareHandler?.getPendingShares()) || [];
+    const result = await LedgeShareHandler?.getPendingShares();
+    return (result as PendingShare[]) ?? [];
   } catch (e) {
     console.warn('[LedgeShareHandler] getPendingShares failed:', e);
     return [];
@@ -29,9 +38,9 @@ export async function getPendingShares() {
 }
 
 /**
- * Clear any pending shares from a previous session.
+ * Clear any pending shares without consuming them.
  */
-export function clearPendingShares() {
+export function clearPendingShares(): void {
   try {
     LedgeShareHandler?.clearPendingShares();
   } catch (e) {

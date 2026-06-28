@@ -1,1 +1,2 @@
 - [Expo web on Replit](expo-web-replit.md) — Three required fixes to run Expo/React Native web in Replit: native module safety, host binding, CI mode.
+- [Android share pipeline](android-share-pipeline.md) — How the receipt sharing pipeline works and the root causes of its bugs.
