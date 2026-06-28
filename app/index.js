@@ -64,10 +64,8 @@ function ProjectCard({ item, index, onPress }) {
   const getTimeString = (dateStr) => formatRelativeDay(dateStr);
 
   return (
-    <Animated.View
-      entering={FadeInDown.delay(Math.min(index * 60, 300)).springify().damping(20).stiffness(120)}
-      style={animatedStyle}
-    >
+    <Animated.View entering={FadeInDown.delay(Math.min(index * 50, 200)).duration(260)}>
+      <Animated.View style={animatedStyle}>
       <Pressable
         style={styles.projectCard}
         onPressIn={() => { scale.value = withSpring(0.975, { damping: 15, stiffness: 300 }); }}
@@ -103,6 +101,7 @@ function ProjectCard({ item, index, onPress }) {
         </View>
         <IconButton icon="chevron-right" iconColor={theme.colors.secondary} size={18} style={{ margin: 0, marginLeft: 4 }} />
       </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -118,25 +117,24 @@ function QuickAction({ icon, label, sublabel, onPress, delay = 0, color }) {
   };
 
   return (
-    <Animated.View
-      entering={FadeInDown.delay(delay).springify().damping(18).stiffness(120)}
-      style={[animStyle, { flex: 1 }]}
-    >
-      <Pressable
-        style={styles.quickActionCard}
-        onPressIn={() => { scale.value = withSpring(0.95, { damping: 12, stiffness: 300 }); }}
-        onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
-        onPress={handlePress}
-      >
-        <View style={[styles.quickActionIcon, color && { backgroundColor: color }]}>
-          <IconButton icon={icon} iconColor="#F0F0F0" size={20} style={{ margin: 0 }} />
-        </View>
-        <Text style={styles.quickActionLabel}>{label}</Text>
-        <View style={styles.quickActionFooter}>
-          <Text style={styles.quickActionSublabel}>{sublabel}</Text>
-          <IconButton icon="chevron-right" iconColor={theme.colors.secondary} size={14} style={{ margin: 0 }} />
-        </View>
-      </Pressable>
+    <Animated.View entering={FadeInDown.delay(delay).duration(260)} style={{ flex: 1 }}>
+      <Animated.View style={animStyle}>
+        <Pressable
+          style={styles.quickActionCard}
+          onPressIn={() => { scale.value = withSpring(0.95, { damping: 12, stiffness: 300 }); }}
+          onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 300 }); }}
+          onPress={handlePress}
+        >
+          <View style={[styles.quickActionIcon, color && { backgroundColor: color }]}>
+            <IconButton icon={icon} iconColor="#F0F0F0" size={20} style={{ margin: 0 }} />
+          </View>
+          <Text style={styles.quickActionLabel}>{label}</Text>
+          <View style={styles.quickActionFooter}>
+            <Text style={styles.quickActionSublabel}>{sublabel}</Text>
+            <IconButton icon="chevron-right" iconColor={theme.colors.secondary} size={14} style={{ margin: 0 }} />
+          </View>
+        </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -262,7 +260,7 @@ export default function HomeScreen() {
   // ---- Balance Card ----
   const BalanceCard = () => (
     projects.length > 0 ? (
-      <Animated.View entering={FadeInDown.delay(100).springify().damping(20).stiffness(100)} style={styles.balanceCard}>
+      <Animated.View entering={FadeInDown.delay(100).duration(280)} style={styles.balanceCard}>
         <View style={styles.balanceCardHeader}>
           <Text style={styles.balanceLabel}>NET BALANCE</Text>
           <View style={[styles.statusDot, { backgroundColor: netBalance >= 0 ? theme.colors.incoming : theme.colors.expense }]} />
@@ -386,7 +384,7 @@ export default function HomeScreen() {
       />
 
       {/* ---- Bottom Navigation ---- */}
-      <Animated.View entering={FadeInUp.delay(400).springify().damping(20)} style={[styles.bottomNav, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
+      <Animated.View entering={FadeInUp.delay(400).duration(280)} style={[styles.bottomNav, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
         <NavButton icon="home-variant" label="Home" isActive onPress={() => {}} />
         <NavButton icon="view-dashboard-outline" label="Dashboard" onPress={() => router.push('/dashboard')} />
 

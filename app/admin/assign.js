@@ -147,7 +147,7 @@ export default function ProjectAssignment() {
             renderItem={({ item, index }) => {
               const assigned = isMember(item.id);
               return (
-                <Animated.View entering={FadeInDown.delay(index * 40).springify().damping(20)}>
+                <Animated.View entering={FadeInDown.delay(index * 40).duration(280)}>
                   <Pressable
                     style={[styles.userRow, assigned && styles.userRowActive]}
                     onPress={() => handleToggleMember(item)}

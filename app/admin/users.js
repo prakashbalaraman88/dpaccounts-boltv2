@@ -92,7 +92,7 @@ export default function UserManagement() {
   };
 
   const renderUser = ({ item, index }) => (
-    <Animated.View entering={FadeInDown.delay(index * 60).springify().damping(20)}>
+    <Animated.View entering={FadeInDown.delay(index * 60).duration(280)}>
       <View style={styles.userCard}>
         <View style={[styles.avatar, item.role === 'admin' && styles.avatarAdmin]}>
           <Text style={styles.avatarText}>{getInitials(item.display_name, item.email)}</Text>

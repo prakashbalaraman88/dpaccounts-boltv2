@@ -109,7 +109,7 @@ export default function SettingsScreen() {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled" bounces={false}>
 
         {/* Account Section */}
-        <Animated.View entering={FadeInDown.delay(100).springify().damping(18)} style={styles.section}>
+        <Animated.View entering={FadeInDown.delay(100).duration(260)} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.accentContainer }]}>
               <IconButton icon="account-circle-outline" iconColor={theme.colors.accent} size={20} style={{ margin: 0 }} />
@@ -146,7 +146,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* API Section — Admin only can edit */}
-        <Animated.View entering={FadeInDown.delay(200).springify().damping(18)} style={styles.section}>
+        <Animated.View entering={FadeInDown.delay(200).duration(260)} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconWrap}>
               <IconButton icon="key-variant" iconColor={theme.colors.primary} size={20} style={{ margin: 0 }} />
@@ -229,7 +229,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* About Section */}
-        <Animated.View entering={FadeInDown.delay(300).springify().damping(18)} style={styles.section}>
+        <Animated.View entering={FadeInDown.delay(300).duration(260)} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconWrap}>
               <IconButton icon="information-outline" iconColor={theme.colors.primary} size={20} style={{ margin: 0 }} />
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* Logout */}
-        <Animated.View entering={FadeInDown.delay(400).springify().damping(18)}>
+        <Animated.View entering={FadeInDown.delay(400).duration(260)}>
           <Pressable
             style={[styles.logoutButton, isLoggingOut && { opacity: 0.6 }]}
             onPress={handleLogout}

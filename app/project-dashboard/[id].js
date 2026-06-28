@@ -1,11 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import {
   View,
   FlatList,
   StyleSheet,
   Pressable,
   Alert,
-  Dimensions,
+  ScrollView,
 } from 'react-native';
 import { Text, IconButton, Modal, Portal, TextInput } from 'react-native-paper';
 import Animated, {
@@ -22,8 +22,6 @@ import { formatTime } from '../../src/utils/datetime';
 import { useAppStore } from '../../src/stores/appStore';
 import { impactLight, impactMedium } from '../../src/utils/haptics';
 
-const { width } = Dimensions.get('window');
-
 function getInitials(name) {
   if (!name) return '??';
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -31,7 +29,7 @@ function getInitials(name) {
 
 function getCategoryLabel(id, type) {
   const cat = CATEGORIES[type]?.find((c) => c.id === id);
-  return cat?.label || id;
+  return cat?.label || id || '—';
 }
 
 export default function ProjectDashboardScreen() {
@@ -46,16 +44,24 @@ export default function ProjectDashboardScreen() {
     loadProject,
     updateProject,
     deleteProject,
+    updateTransaction,
+    deleteTransaction,
   } = useAppStore();
 
+  // ── Project edit state ──────────────────────────────────────────────
   const [showEdit, setShowEdit] = useState(false);
   const [editClientName, setEditClientName] = useState('');
   const [editProjectName, setEditProjectName] = useState('');
   const [editBudget, setEditBudget] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  // Surfaces a load failure as a friendly screen instead of letting an
-  // unhandled rejection from loadProject bubble up to the crash guard.
   const [loadError, setLoadError] = useState(null);
+
+  // ── Transaction edit state ──────────────────────────────────────────
+  const [editTxn, setEditTxn] = useState(null); // the message being edited
+  const [txnAmount, setTxnAmount] = useState('');
+  const [txnVendor, setTxnVendor] = useState('');
+  const [txnCategory, setTxnCategory] = useState('');
+  const [isSavingTxn, setIsSavingTxn] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -75,7 +81,7 @@ export default function ProjectDashboardScreen() {
     router.push(`/project/${projectId}`);
   };
 
-  const openEdit = () => {
+  const openEditProject = () => {
     impactLight();
     setEditClientName(currentProject?.client_name || '');
     setEditProjectName(currentProject?.project_name || '');
@@ -83,7 +89,7 @@ export default function ProjectDashboardScreen() {
     setShowEdit(true);
   };
 
-  const handleSave = async () => {
+  const handleSaveProject = async () => {
     if (!editClientName.trim() || !editProjectName.trim()) return;
     setIsSaving(true);
     try {
@@ -100,11 +106,11 @@ export default function ProjectDashboardScreen() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDeleteProject = () => {
     impactLight();
     Alert.alert(
       'Delete project?',
-      `This will permanently delete ${currentProject?.client_name || 'this project'} and all its messages/transactions.`,
+      `This will permanently delete "${currentProject?.client_name || 'this project'}" and all its transactions.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -123,9 +129,66 @@ export default function ProjectDashboardScreen() {
     );
   };
 
-  const transactions = (messages || [])
-    .filter((m) => m.transaction_id)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  // ── Transaction edit ────────────────────────────────────────────────
+  const openEditTxn = (item) => {
+    impactLight();
+    setEditTxn(item);
+    setTxnAmount(item.amount != null ? String(item.amount) : '');
+    setTxnVendor(item.vendor || '');
+    setTxnCategory(item.category_id || '');
+  };
+
+  const handleSaveTxn = async () => {
+    if (!editTxn?.transaction_id) return;
+    const amt = parseFloat(txnAmount);
+    if (!amt || isNaN(amt) || amt <= 0) return;
+    setIsSavingTxn(true);
+    try {
+      const cat = CATEGORIES[editTxn.transaction_type]?.find((c) => c.id === txnCategory);
+      await updateTransaction(editTxn.transaction_id, projectId, {
+        amount: amt,
+        vendor: txnVendor.trim(),
+        category_id: txnCategory,
+        category_label: cat?.label || txnCategory,
+      });
+      setEditTxn(null);
+    } catch (e) {
+      console.error('Failed to update transaction:', e);
+    } finally {
+      setIsSavingTxn(false);
+    }
+  };
+
+  const handleDeleteTxn = (item) => {
+    impactLight();
+    Alert.alert(
+      'Delete transaction?',
+      `${item.transaction_type === 'incoming' ? '+' : '-'}${formatRupees(item.amount || 0)} — ${item.content || 'Transaction'}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteTransaction(item.transaction_id, projectId);
+            } catch (e) {
+              console.error('Failed to delete transaction:', e);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── Derived data ────────────────────────────────────────────────────
+  const transactions = useMemo(
+    () =>
+      (messages || [])
+        .filter((m) => m.transaction_id)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+    [messages]
+  );
 
   const totalIncoming = currentProject?.total_incoming || 0;
   const totalExpense = currentProject?.total_expense || 0;
@@ -133,28 +196,60 @@ export default function ProjectDashboardScreen() {
   const budget = currentProject?.budget || 0;
   const budgetPercent = budget > 0 ? Math.min((totalExpense / budget) * 100, 100) : 0;
 
-  const renderTransaction = ({ item }) => {
+  // ── Render helpers ──────────────────────────────────────────────────
+  const renderTransaction = ({ item, index }) => {
     const isIncoming = item.transaction_type === 'incoming';
+    const color = isIncoming ? theme.colors.incoming : theme.colors.expense;
+
     return (
-      <Animated.View entering={FadeInDown.delay(100).springify().damping(18)} style={styles.txnCard}>
-        <View style={styles.txnRow}>
-          <View style={[styles.txnDot, { backgroundColor: isIncoming ? theme.colors.incoming : theme.colors.expense }]} />
-          <View style={styles.txnInfo}>
-            <Text style={styles.txnDescription} numberOfLines={1}>{item.content || 'Transaction'}</Text>
-            <Text style={styles.txnMeta}>
-              {getCategoryLabel(item.category_id, item.transaction_type)} · {formatTime(item.created_at)}
+      <Pressable
+        style={styles.txnCard}
+        onPress={() => openEditTxn(item)}
+        android_ripple={{ color: 'rgba(255,255,255,0.04)', borderless: false }}
+      >
+        {/* Left accent bar */}
+        <View style={[styles.txnAccent, { backgroundColor: color }]} />
+
+        <View style={styles.txnBody}>
+          <View style={styles.txnTopRow}>
+            <Text style={styles.txnDescription} numberOfLines={1}>
+              {item.content || 'Transaction'}
+            </Text>
+            <Text style={[styles.txnAmount, { color }]}>
+              {isIncoming ? '+' : '-'}{formatRupees(item.amount || 0)}
             </Text>
           </View>
-          <Text style={[styles.txnAmount, { color: isIncoming ? theme.colors.incoming : theme.colors.expense }]}>
-            {isIncoming ? '+' : '-'}{formatRupees(item.amount || 0)}
-          </Text>
+
+          <View style={styles.txnBottomRow}>
+            <Text style={styles.txnMeta}>
+              {getCategoryLabel(item.category_id, item.transaction_type)}
+              {item.vendor ? ` · ${item.vendor}` : ''}
+              {' · '}{formatTime(item.created_at)}
+            </Text>
+
+            <View style={styles.txnActions}>
+              <Pressable
+                style={styles.txnActionBtn}
+                onPress={(e) => { e.stopPropagation(); openEditTxn(item); }}
+                hitSlop={8}
+              >
+                <IconButton icon="pencil-outline" iconColor={theme.colors.secondary} size={15} style={{ margin: 0 }} />
+              </Pressable>
+              <Pressable
+                style={styles.txnActionBtn}
+                onPress={(e) => { e.stopPropagation(); handleDeleteTxn(item); }}
+                hitSlop={8}
+              >
+                <IconButton icon="trash-can-outline" iconColor={theme.colors.expense} size={15} style={{ margin: 0 }} />
+              </Pressable>
+            </View>
+          </View>
         </View>
-        {item.vendor ? <Text style={styles.txnVendor}>Vendor: {item.vendor}</Text> : null}
-      </Animated.View>
+      </Pressable>
     );
   };
 
-  // Render a recoverable error screen if loadProject fails
+  // ── Error screen ────────────────────────────────────────────────────
   if (loadError && !currentProject) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 28, paddingTop: insets.top + 40 }]}>
@@ -183,28 +278,34 @@ export default function ProjectDashboardScreen() {
     );
   }
 
+  // ── Main render ─────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
+      <View style={styles.header}>
         <Pressable style={styles.headerBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/')}>
           <IconButton icon="arrow-left" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0 }} />
         </Pressable>
         <Text style={styles.headerTitle}>Project</Text>
-        <Pressable style={styles.headerBtn} onPress={openEdit}>
+        <Pressable style={styles.headerBtn} onPress={openEditProject}>
           <IconButton icon="pencil-outline" iconColor={theme.colors.primary} size={20} style={{ margin: 0 }} />
         </Pressable>
-      </Animated.View>
+        <Pressable style={styles.headerBtn} onPress={handleDeleteProject}>
+          <IconButton icon="trash-can-outline" iconColor={theme.colors.expense} size={20} style={{ margin: 0 }} />
+        </Pressable>
+      </View>
 
+      {/* Transaction List */}
       <FlatList
         data={transactions}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
+        renderItem={renderTransaction}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 96 }]}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View>
             {/* Project Card */}
-            <Animated.View entering={FadeInDown.delay(80).springify().damping(18)} style={styles.projectCard}>
+            <Animated.View entering={FadeInDown.delay(60).duration(300)} style={styles.projectCard}>
               <View style={styles.projectHeader}>
                 <View style={styles.projectAvatar}>
                   <Text style={styles.projectAvatarText}>{getInitials(currentProject?.client_name)}</Text>
@@ -252,27 +353,17 @@ export default function ProjectDashboardScreen() {
               )}
             </Animated.View>
 
-            {/* Actions */}
-            <Animated.View entering={FadeInDown.delay(120).springify().damping(18)} style={styles.actionsRow}>
-              <Pressable style={styles.chatButton} onPress={openChat}>
-                <IconButton icon="chat-processing-outline" iconColor="#080808" size={20} style={{ margin: 0 }} />
-                <Text style={styles.chatButtonText}>Open Chat</Text>
-              </Pressable>
-              <Pressable style={styles.deleteButton} onPress={handleDelete}>
-                <IconButton icon="trash-can-outline" iconColor={theme.colors.expense} size={20} style={{ margin: 0 }} />
-              </Pressable>
-            </Animated.View>
-
-            {/* Transactions header */}
+            {/* Transactions section header */}
             {transactions.length > 0 && (
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recent Transactions ({transactions.length})</Text>
-              </View>
+              <Animated.View entering={FadeIn.delay(100).duration(300)} style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Transactions</Text>
+                <Text style={styles.sectionCount}>{transactions.length}</Text>
+              </Animated.View>
             )}
           </View>
         }
         ListEmptyComponent={
-          <Animated.View entering={FadeIn.delay(300)} style={styles.emptyState}>
+          <Animated.View entering={FadeIn.delay(200).duration(400)} style={styles.emptyState}>
             <IconButton icon="receipt-text-outline" iconColor={theme.colors.secondary} size={40} style={{ margin: 0 }} />
             <Text style={styles.emptyTitle}>No transactions yet</Text>
             <Text style={styles.emptySubtitle}>Open chat to record income, expenses, or share receipts.</Text>
@@ -280,7 +371,17 @@ export default function ProjectDashboardScreen() {
         }
       />
 
-      {/* Edit Modal */}
+      {/* FAB — Open Chat */}
+      <Animated.View
+        entering={FadeIn.delay(200).duration(300)}
+        style={[styles.fab, { bottom: Math.max(24, insets.bottom + 16) }]}
+      >
+        <Pressable style={styles.fabButton} onPress={openChat} android_ripple={{ color: 'rgba(0,0,0,0.12)', borderless: true }}>
+          <IconButton icon="chat-processing-outline" iconColor="#080808" size={26} style={{ margin: 0 }} />
+        </Pressable>
+      </Animated.View>
+
+      {/* Edit Project Modal */}
       <Portal>
         <Modal visible={showEdit} onDismiss={() => setShowEdit(false)} contentContainerStyle={[styles.modal, { paddingBottom: Math.max(24, insets.bottom + 16) }]}>
           <View style={styles.modalHandle} />
@@ -327,12 +428,87 @@ export default function ProjectDashboardScreen() {
           </View>
           <Pressable
             style={[styles.saveButton, (!editClientName.trim() || !editProjectName.trim() || isSaving) && styles.saveButtonDisabled]}
-            onPress={handleSave}
+            onPress={handleSaveProject}
             disabled={!editClientName.trim() || !editProjectName.trim() || isSaving}
           >
             <Text style={styles.saveButtonText}>{isSaving ? 'Saving…' : 'Save Changes'}</Text>
           </Pressable>
           <Pressable style={styles.cancelButton} onPress={() => setShowEdit(false)}>
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </Pressable>
+        </Modal>
+      </Portal>
+
+      {/* Edit Transaction Modal */}
+      <Portal>
+        <Modal
+          visible={!!editTxn}
+          onDismiss={() => setEditTxn(null)}
+          contentContainerStyle={[styles.modal, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
+        >
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Edit Transaction</Text>
+          {editTxn && (
+            <Text style={styles.txnEditDesc} numberOfLines={2}>{editTxn.content}</Text>
+          )}
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Amount (₹)</Text>
+            <TextInput
+              value={txnAmount}
+              onChangeText={setTxnAmount}
+              mode="outlined"
+              keyboardType="numeric"
+              style={styles.input}
+              outlineColor={theme.colors.outline}
+              activeOutlineColor={theme.colors.primary}
+              textColor={theme.colors.onSurface}
+              theme={{ roundness: 12 }}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Vendor / Party</Text>
+            <TextInput
+              value={txnVendor}
+              onChangeText={setTxnVendor}
+              mode="outlined"
+              style={styles.input}
+              outlineColor={theme.colors.outline}
+              activeOutlineColor={theme.colors.primary}
+              textColor={theme.colors.onSurface}
+              theme={{ roundness: 12 }}
+              placeholder="Optional"
+              placeholderTextColor={theme.colors.secondary}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+              {(CATEGORIES[editTxn?.transaction_type] || []).map((cat) => {
+                const active = txnCategory === cat.id;
+                return (
+                  <Pressable
+                    key={cat.id}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setTxnCategory(cat.id)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{cat.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <Pressable
+            style={[styles.saveButton, (isSavingTxn || !txnAmount) && styles.saveButtonDisabled]}
+            onPress={handleSaveTxn}
+            disabled={isSavingTxn || !txnAmount}
+          >
+            <Text style={styles.saveButtonText}>{isSavingTxn ? 'Saving…' : 'Save'}</Text>
+          </Pressable>
+          <Pressable style={styles.cancelButton} onPress={() => setEditTxn(null)}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </Pressable>
         </Modal>
@@ -372,13 +548,14 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 32,
   },
+
+  // ── Project card ──────────────────────────────────────────────────
   projectCard: {
     backgroundColor: theme.colors.surfaceElevated,
     borderRadius: 20,
     padding: 18,
-    marginBottom: 14,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: theme.colors.outline,
   },
@@ -443,6 +620,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 4,
+    color: theme.colors.onSurface,
   },
   statLabel: {
     fontSize: 10,
@@ -478,38 +656,13 @@ const styles = StyleSheet.create({
     width: 34,
     textAlign: 'right',
   },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 24,
-  },
-  chatButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
-  },
-  chatButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#080808',
-  },
-  deleteButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    backgroundColor: theme.colors.expenseMuted,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(251,113,133,0.15)',
-  },
+
+  // ── Section header ────────────────────────────────────────────────
   sectionHeader: {
-    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 13,
@@ -518,48 +671,98 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  txnCard: {
+  sectionCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.secondary,
     backgroundColor: theme.colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: theme.colors.outline,
   },
-  txnRow: {
+
+  // ── Transaction card ──────────────────────────────────────────────
+  txnCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    overflow: 'hidden',
   },
-  txnDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  txnAccent: {
+    width: 3,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
   },
-  txnInfo: {
+  txnBody: {
     flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  txnTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 5,
   },
   txnDescription: {
+    flex: 1,
     fontSize: 14,
     fontWeight: '600',
     color: theme.colors.onSurface,
-    marginBottom: 2,
-  },
-  txnMeta: {
-    fontSize: 11,
-    color: theme.colors.secondary,
-    fontWeight: '500',
   },
   txnAmount: {
     fontSize: 15,
     fontWeight: '700',
   },
-  txnVendor: {
-    fontSize: 12,
-    color: theme.colors.onSurfaceVariant,
-    marginTop: 6,
+  txnBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  txnMeta: {
+    flex: 1,
+    fontSize: 11,
+    color: theme.colors.secondary,
     fontWeight: '500',
   },
+  txnActions: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  txnActionBtn: {
+    padding: 2,
+  },
+
+  // ── FAB ───────────────────────────────────────────────────────────
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: theme.colors.primary,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  fabButton: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // ── Empty state ───────────────────────────────────────────────────
   emptyState: {
     alignItems: 'center',
     paddingTop: 80,
@@ -577,6 +780,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingHorizontal: 40,
   },
+
+  // ── Modals ────────────────────────────────────────────────────────
   modal: {
     backgroundColor: theme.colors.surfaceElevated,
     margin: 20,
@@ -597,7 +802,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: theme.colors.onSurface,
+    marginBottom: 6,
+  },
+  txnEditDesc: {
+    fontSize: 13,
+    color: theme.colors.secondary,
     marginBottom: 18,
+    lineHeight: 18,
   },
   inputGroup: {
     marginBottom: 14,
@@ -613,6 +824,30 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: theme.colors.surface,
     fontSize: 14,
+  },
+  chipScroll: {
+    flexDirection: 'row',
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    marginRight: 8,
+  },
+  chipActive: {
+    backgroundColor: theme.colors.primaryContainer,
+    borderColor: theme.colors.primary,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.secondary,
+  },
+  chipTextActive: {
+    color: theme.colors.primary,
   },
   saveButton: {
     backgroundColor: theme.colors.primary,

@@ -21,7 +21,7 @@ function ProjectPnlCard({ project, index }) {
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(200 + index * 80).springify().damping(18)}
+      entering={FadeInDown.delay(200 + index * 80).duration(260)}
       style={animStyle}
     >
       <Pressable
@@ -163,7 +163,7 @@ export default function DashboardScreen() {
         ListHeaderComponent={
           <View>
             {/* Overall P&L Card */}
-            <Animated.View entering={FadeInDown.delay(100).springify().damping(18)} style={styles.overallCard}>
+            <Animated.View entering={FadeInDown.delay(100).duration(260)} style={styles.overallCard}>
               <Text style={styles.overallLabel}>NET PROFIT / LOSS</Text>
               <Text style={[styles.overallAmount, { color: netPnl >= 0 ? theme.colors.incoming : theme.colors.expense }]}>
                 {netPnl >= 0 ? '+' : '-'}{formatRupees(Math.abs(netPnl))}
@@ -193,7 +193,7 @@ export default function DashboardScreen() {
             </Animated.View>
 
             {/* Quick Stats Row */}
-            <Animated.View entering={FadeInDown.delay(150).springify().damping(18)} style={styles.statsRow}>
+            <Animated.View entering={FadeInDown.delay(150).duration(260)} style={styles.statsRow}>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxValue}>{projectCount}</Text>
                 <Text style={styles.statBoxLabel}>Projects</Text>
@@ -216,7 +216,7 @@ export default function DashboardScreen() {
               const maxIncoming = incomingItems.length > 0 ? Math.max(...incomingItems.map((c) => c.total)) : 0;
 
               return (
-                <Animated.View entering={FadeInDown.delay(180).springify().damping(18)} style={styles.catSection}>
+                <Animated.View entering={FadeInDown.delay(180).duration(260)} style={styles.catSection}>
                   <Text style={styles.catSectionTitle}>EXPENSE BREAKDOWN</Text>
                   {expenseItems.length > 0 ? (
                     expenseItems.map((item) => (

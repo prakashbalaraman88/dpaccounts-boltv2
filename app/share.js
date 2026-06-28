@@ -40,7 +40,7 @@ function ProjectCard({ project, index, onPress, disabled }) {
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(80 + index * 55).springify().damping(18)}
+      entering={FadeInDown.delay(80 + index * 55).duration(260)}
       style={animStyle}
     >
       <Pressable

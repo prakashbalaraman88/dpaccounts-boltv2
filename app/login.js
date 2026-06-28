@@ -65,7 +65,7 @@ export default function LoginScreen() {
         </Animated.View>
 
         {/* Login Card */}
-        <Animated.View entering={FadeInDown.delay(300).springify().damping(20)} style={styles.card}>
+        <Animated.View entering={FadeInDown.delay(300).duration(380)} style={styles.card}>
           <Text style={styles.cardTitle}>Sign In</Text>
           <Text style={styles.cardSubtitle}>Enter your credentials to continue</Text>
 

@@ -66,7 +66,7 @@ export default function ChangePasswordScreen() {
         </Animated.View>
 
         {/* Form Card */}
-        <Animated.View entering={FadeInDown.delay(300).springify().damping(20)} style={styles.card}>
+        <Animated.View entering={FadeInDown.delay(300).duration(280)} style={styles.card}>
           {error ? (
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
