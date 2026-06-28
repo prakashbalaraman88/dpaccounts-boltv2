@@ -287,6 +287,9 @@ export default function ProjectDashboardScreen() {
           <IconButton icon="arrow-left" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0 }} />
         </Pressable>
         <Text style={styles.headerTitle}>Project</Text>
+        <Pressable style={styles.headerBtn} onPress={() => { impactLight(); router.push(`/project-analytics/${projectId}`); }}>
+          <IconButton icon="chart-bar" iconColor={theme.colors.accent} size={20} style={{ margin: 0 }} />
+        </Pressable>
         <Pressable style={styles.headerBtn} onPress={openEditProject}>
           <IconButton icon="pencil-outline" iconColor={theme.colors.primary} size={20} style={{ margin: 0 }} />
         </Pressable>
