@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from './authStore';
+import { useTeamStore } from './teamStore';
 
 // Build-time default so fresh installs work before an admin saves a key.
 // Set EXPO_PUBLIC_AI_API_KEY (or legacy EXPO_PUBLIC_OPENROUTER_API_KEY) in .env (gitignored).
@@ -107,26 +108,67 @@ export const useAppStore = create((set, get) => ({
     const userId = useAuthStore.getState().user?.id;
     if (!userId) throw new Error('Not authenticated');
 
-    const { data, error } = await supabase
+    const teamState = useTeamStore.getState();
+    let team = teamState.team;
+    if (!team) {
+      team = await teamState.loadTeam();
+    }
+    const limitState = await teamState.refreshProjectLimit();
+    if (!limitState?.canCreate) {
+      throw new Error(
+        `Free plan includes 1 project. Upgrade to the ₹299/month plan to create up to 10 projects.`
+      );
+    }
+
+    const projectInsert = {
+      client_name: clientName,
+      project_name: projectName,
+      description: description || '',
+      budget: budget || 0,
+      created_by: userId,
+      ...(team?.id ? { team_id: team.id } : {}),
+    };
+
+    let { data, error } = await supabase
       .from('projects')
-      .insert({
-        client_name: clientName,
-        project_name: projectName,
-        description: description || '',
-        budget: budget || 0,
-        created_by: userId,
-      })
+      .insert(projectInsert)
       .select()
       .single();
 
+    if (error && team?.id && (error.code === 'PGRST204' || /team_id/i.test(error.message || ''))) {
+      const retry = await supabase
+        .from('projects')
+        .insert({
+          client_name: clientName,
+          project_name: projectName,
+          description: description || '',
+          budget: budget || 0,
+          created_by: userId,
+        })
+        .select()
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
+
     if (error) throw error;
 
-    // Auto-add creator as project member
-    await supabase
+    // Auto-add creator as project member. Retry without role for older
+    // databases until the team/subscription migration is applied.
+    const { error: memberError } = await supabase
       .from('project_members')
-      .insert({ project_id: data.id, user_id: userId });
+      .insert({ project_id: data.id, user_id: userId, role: 'admin' });
+    if (memberError) {
+      const roleColumnMissing = /role/i.test(memberError.message || '') || memberError.code === 'PGRST204';
+      if (!roleColumnMissing) throw memberError;
+      const { error: retryError } = await supabase
+        .from('project_members')
+        .insert({ project_id: data.id, user_id: userId });
+      if (retryError && retryError.code !== '23505') throw retryError;
+    }
 
     await get().loadProjects();
+    await teamState.refreshProjectLimit().catch(() => {});
     return data.id;
   },
 

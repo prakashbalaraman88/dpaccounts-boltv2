@@ -143,6 +143,11 @@ export default function SettingsScreen() {
             <IconButton icon="lock-reset" iconColor={theme.colors.primary} size={18} style={{ margin: 0 }} />
             <Text style={styles.changePasswordText}>Change Password</Text>
           </Pressable>
+
+          <Pressable style={styles.changePasswordButton} onPress={() => router.push('/team')}>
+            <IconButton icon="account-group-outline" iconColor={theme.colors.accent} size={18} style={{ margin: 0 }} />
+            <Text style={styles.changePasswordText}>Team & Plan</Text>
+          </Pressable>
         </Animated.View>
 
         {/* API Section — Admin only can edit */}

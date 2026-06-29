@@ -179,6 +179,7 @@ export default function HomeScreen() {
   const [clientName, setClientName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [budget, setBudget] = useState('');
+  const [createError, setCreateError] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -217,6 +218,7 @@ export default function HomeScreen() {
   const handleCreateProject = async () => {
     if (!clientName.trim() || !projectName.trim()) return;
     impactMedium();
+    setCreateError('');
     try {
       const id = await createProject(clientName.trim(), projectName.trim(), '', parseFloat(budget) || 0);
       notificationSuccess();
@@ -229,6 +231,7 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Failed to create project:', error);
+      setCreateError(error?.message || 'Could not create project');
     }
   };
 
@@ -437,6 +440,12 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>New Project</Text>
             <Text style={styles.modalSubtitle}>Set up a new project to track finances</Text>
 
+            {createError ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{createError}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Client Name</Text>
               <TextInput
@@ -497,7 +506,7 @@ export default function HomeScreen() {
               <Text style={styles.createButtonText}>Create Project</Text>
             </Pressable>
 
-            <Pressable style={styles.cancelButton} onPress={() => setShowNewProject(false)}>
+            <Pressable style={styles.cancelButton} onPress={() => { setShowNewProject(false); setCreateError(''); }}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </Pressable>
           </ScrollView>
@@ -945,6 +954,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: theme.colors.secondary,
     marginBottom: 28,
+  },
+  errorBanner: {
+    backgroundColor: theme.colors.expenseMuted,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.16)',
+  },
+  errorBannerText: {
+    color: theme.colors.expense,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   inputGroup: {
     marginBottom: 18,
