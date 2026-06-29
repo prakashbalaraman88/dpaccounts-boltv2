@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, StyleSheet, Pressable, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { Text, TextInput } from 'react-native-paper';
+import { Text, TextInput, IconButton } from 'react-native-paper';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { theme } from '../src/constants/theme';
 import { useAuthStore } from '../src/stores/authStore';
@@ -14,14 +14,24 @@ function LedgeLogo({ size = 56 }) {
   );
 }
 
+function GoogleIcon({ size = 20 }) {
+  return (
+    <View style={styles.googleIconWrapper}>
+      <IconButton icon="google" size={size} iconColor="#4285F4" style={{ margin: 0 }} />
+    </View>
+  );
+}
+
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const login = useAuthStore((s) => s.login);
+  const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -38,7 +48,7 @@ export default function LoginScreen() {
       if (msg === 'Invalid login credentials') {
         setError('Invalid email or password');
       } else if (/failed to fetch|network|name.*resolved/i.test(msg)) {
-        setError('Cannot reach the server. Check your internet connection — or the Supabase project may be paused (ask your admin).');
+        setError('Cannot reach the server. Check your internet connection.');
       } else {
         setError(msg || 'Login failed. Please try again.');
       }
@@ -47,13 +57,41 @@ export default function LoginScreen() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setError('');
+    setIsGoogleLoading(true);
+    try {
+      const profile = await loginWithGoogle();
+      if (!profile) {
+        // User cancelled the browser — do nothing
+      }
+    } catch (e) {
+      console.error('Google Sign-In error:', e);
+      const msg = e.message || '';
+      if (/cancelled|cancel/i.test(msg)) {
+        // silent cancel
+      } else if (/network|fetch/i.test(msg)) {
+        setError('Network error. Check your connection and try again.');
+      } else {
+        setError('Google Sign-In failed. Please try again.');
+      }
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const isAnyLoading = isLoading || isGoogleLoading;
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior="padding"
     >
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(40, insets.top + 24), paddingBottom: Math.max(40, insets.bottom + 24) }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: Math.max(40, insets.top + 24), paddingBottom: Math.max(40, insets.bottom + 24) },
+        ]}
         keyboardShouldPersistTaps="handled"
         bounces={false}
       >
@@ -67,7 +105,7 @@ export default function LoginScreen() {
         {/* Login Card */}
         <Animated.View entering={FadeInDown.delay(300).duration(380)} style={styles.card}>
           <Text style={styles.cardTitle}>Sign In</Text>
-          <Text style={styles.cardSubtitle}>Enter your credentials to continue</Text>
+          <Text style={styles.cardSubtitle}>Continue with Google or your credentials</Text>
 
           {error ? (
             <View style={styles.errorBanner}>
@@ -75,6 +113,26 @@ export default function LoginScreen() {
             </View>
           ) : null}
 
+          {/* Google Sign-In Button */}
+          <Pressable
+            style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
+            onPress={handleGoogleLogin}
+            disabled={isAnyLoading}
+          >
+            <GoogleIcon size={18} />
+            <Text style={styles.googleButtonText}>
+              {isGoogleLoading ? 'Opening Google…' : 'Continue with Google'}
+            </Text>
+          </Pressable>
+
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Email */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>EMAIL</Text>
             <TextInput
@@ -96,6 +154,7 @@ export default function LoginScreen() {
             />
           </View>
 
+          {/* Password */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>PASSWORD</Text>
             <TextInput
@@ -122,13 +181,14 @@ export default function LoginScreen() {
             />
           </View>
 
+          {/* Email Sign-In Button */}
           <Pressable
-            style={[styles.signInButton, isLoading && styles.signInButtonDisabled]}
+            style={[styles.signInButton, isLoading && styles.buttonDisabled]}
             onPress={handleLogin}
-            disabled={isLoading}
+            disabled={isAnyLoading}
           >
             <Text style={styles.signInButtonText}>
-              {isLoading ? 'Signing In...' : 'Sign In'}
+              {isLoading ? 'Signing In…' : 'Sign In with Email'}
             </Text>
           </Pressable>
         </Animated.View>
@@ -136,7 +196,7 @@ export default function LoginScreen() {
         {/* Footer */}
         <Animated.View entering={FadeIn.delay(600).duration(800)} style={styles.footer}>
           <Text style={styles.footerText}>
-            Contact your admin for account access
+            New users: sign in with Google to get started
           </Text>
         </Animated.View>
       </ScrollView>
@@ -198,7 +258,7 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: 14,
     color: theme.colors.secondary,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   errorBanner: {
     backgroundColor: theme.colors.expenseMuted,
@@ -212,6 +272,50 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
+
+  // ── Google button ────────────────────────────────────────────────
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 20,
+  },
+  googleIconWrapper: {
+    marginRight: -4,
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+
+  // ── Divider ──────────────────────────────────────────────────────
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.colors.outline,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.secondary,
+    letterSpacing: 1,
+  },
+
+  // ── Email form ───────────────────────────────────────────────────
   inputGroup: {
     marginBottom: 16,
   },
@@ -233,7 +337,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  signInButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.6,
   },
   signInButtonText: {
@@ -241,6 +345,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#080808',
   },
+
+  // ── Footer ───────────────────────────────────────────────────────
   footer: {
     alignItems: 'center',
     marginTop: 32,
@@ -248,5 +354,6 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 13,
     color: theme.colors.secondary,
+    textAlign: 'center',
   },
 });

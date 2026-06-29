@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   signIn,
+  signInWithGoogle,
   signOut,
   changePassword as changePasswordService,
   getSession,
@@ -17,8 +18,8 @@ export const useAuthStore = create((set, get) => ({
   isAdmin: false,
 
   /**
-   * Initialize auth state — called once on app start
-   * Checks for existing session and fetches profile
+   * Initialize auth state — called once on app start.
+   * Checks for existing session and fetches profile.
    */
   initialize: async () => {
     try {
@@ -26,7 +27,10 @@ export const useAuthStore = create((set, get) => ({
 
       const session = await getSession();
       if (session?.user) {
-        const profile = await getUserProfile(session.user.id);
+        const profile = await getUserProfile(
+          session.user.id,
+          session.user.user_metadata
+        );
         set({
           session,
           user: session.user,
@@ -38,14 +42,17 @@ export const useAuthStore = create((set, get) => ({
         set({ session: null, user: null, profile: null, isAdmin: false, isLoading: false });
       }
 
-      // Listen for auth changes (token refresh, sign out, etc.)
+      // Listen for auth changes (token refresh, sign-out, OAuth callback)
       onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
           set({ session: null, user: null, profile: null, isAdmin: false });
         } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
           if (session?.user) {
             try {
-              const profile = await getUserProfile(session.user.id);
+              const profile = await getUserProfile(
+                session.user.id,
+                session.user.user_metadata
+              );
               set({
                 session,
                 user: session.user,
@@ -53,7 +60,7 @@ export const useAuthStore = create((set, get) => ({
                 isAdmin: profile?.role === 'admin',
               });
             } catch (e) {
-              console.error('Error fetching profile on auth change:', e);
+              console.error('Error fetching/creating profile on auth change:', e);
             }
           }
         }
@@ -69,7 +76,28 @@ export const useAuthStore = create((set, get) => ({
    */
   login: async (email, password) => {
     const data = await signIn(email, password);
-    const profile = await getUserProfile(data.user.id);
+    const profile = await getUserProfile(data.user.id, data.user.user_metadata);
+    set({
+      session: data.session,
+      user: data.user,
+      profile,
+      isAdmin: profile?.role === 'admin',
+    });
+    return profile;
+  },
+
+  /**
+   * Login with Google OAuth.
+   * Opens a browser; returns null if the user cancels.
+   * The onAuthStateChange listener will update the store once the session lands.
+   */
+  loginWithGoogle: async () => {
+    const data = await signInWithGoogle();
+    if (!data) return null; // user cancelled
+
+    // onAuthStateChange handles store updates, but we also update here
+    // immediately to avoid a blank render while the listener fires.
+    const profile = await getUserProfile(data.user.id, data.user.user_metadata);
     set({
       session: data.session,
       user: data.user,
@@ -104,7 +132,7 @@ export const useAuthStore = create((set, get) => ({
   refreshProfile: async () => {
     const { user } = get();
     if (user) {
-      const profile = await getUserProfile(user.id);
+      const profile = await getUserProfile(user.id, user.user_metadata);
       set({ profile, isAdmin: profile?.role === 'admin' });
     }
   },

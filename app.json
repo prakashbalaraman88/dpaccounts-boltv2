@@ -13,7 +13,8 @@
       "backgroundColor": "#050505"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ledge.accounts"
     },
     "android": {
       "package": "com.ledge.accounts",
@@ -50,7 +51,8 @@
           ]
         }
       ],
-      "./plugins/with-ledge-share-handler.js"
+      "./plugins/with-ledge-share-handler.js",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},
