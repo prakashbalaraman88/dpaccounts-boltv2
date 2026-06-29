@@ -163,18 +163,10 @@ function messageToTextCandidates(message) {
       value.forEach((item) => {
         if (typeof item === 'string') candidates.push(item);
         else if (item?.text) candidates.push(item.text);
-        else if (item?.arguments) push(item.arguments);
-        else if (item?.function?.arguments) push(item.function.arguments);
         else if (item?.content) push(item.content);
         else candidates.push(JSON.stringify(item));
       });
       return;
-    }
-    if (typeof value === 'object') {
-      if (value.text) candidates.push(value.text);
-      if (value.arguments) push(value.arguments);
-      if (value.function?.arguments) push(value.function.arguments);
-      if (value.content) push(value.content);
     }
     candidates.push(JSON.stringify(value));
   };
