@@ -131,7 +131,7 @@ export default function PaywallScreen() {
     projectLimit,
     purchase,
     restore,
-    refresh,
+    refreshCustomerInfo,
   } = useSubscription();
 
   const [selectedPkg, setSelectedPkg] = useState(null);
@@ -177,25 +177,48 @@ export default function PaywallScreen() {
         return;
       }
 
-      // Entitlement not yet reflected — refresh and poll
+      // Entitlement not yet reflected — poll with a lightweight customer-info-only
+      // fetch so the "Syncing…" banner stays visible and isLoading is never set.
       setIsSyncing(true);
+
+      const tierName = TIER_INFO[selectedPkg.identifier]?.name ?? 'Ledge Pro';
+      const navigateSuccess = () => {
+        setIsSyncing(false);
+        setSuccessMsg(`Welcome to ${tierName}! 🎉`);
+        setTimeout(() => router.navigate('/'), 1800);
+      };
+
+      // Hard safety timeout: navigate away after 10 s regardless of sync status
+      // so the user is never permanently stuck if RevenueCat is down.
+      let settled = false;
+      const hardTimeoutId = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          console.warn('[Paywall] Hard timeout reached; navigating away without confirmed entitlement.');
+          navigateSuccess();
+        }
+      }, 10000);
+
       const POLL_INTERVAL_MS = 1500;
       const MAX_ATTEMPTS     = 4;
       let reflected = false;
       for (let i = 0; i < MAX_ATTEMPTS; i++) {
         await new Promise((res) => setTimeout(res, POLL_INTERVAL_MS));
-        const fresh = await refresh();
+        const fresh = await refreshCustomerInfo();
         if (isEntitlementActive(fresh)) {
           reflected = true;
           break;
         }
       }
-      setIsSyncing(false);
-      setSuccessMsg(`Welcome to ${TIER_INFO[selectedPkg.identifier]?.name ?? 'Ledge Pro'}! 🎉`);
-      if (!reflected) {
-        console.warn('[Paywall] Entitlement not reflected after polling; navigating anyway.');
+
+      if (!settled) {
+        settled = true;
+        clearTimeout(hardTimeoutId);
+        if (!reflected) {
+          console.warn('[Paywall] Entitlement not reflected after polling; navigating anyway.');
+        }
+        navigateSuccess();
       }
-      setTimeout(() => router.navigate('/'), 1800);
     } catch (e) {
       setShowConfirm(false);
       setIsSyncing(false);

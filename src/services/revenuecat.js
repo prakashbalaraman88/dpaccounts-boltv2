@@ -245,6 +245,21 @@ function useSubscriptionContext() {
 
   const projectLimit = PLAN_LIMITS[activePlan];
 
+  // ── Lightweight customer-info-only refresh (used by post-purchase polling) ─
+  // Does NOT touch isLoading or offerings so the "Syncing…" banner stays visible
+  // and the offerings UI is not disrupted.
+  const refreshCustomerInfo = useCallback(async () => {
+    if (!_initialized) return null;
+    try {
+      const info = await Purchases.getCustomerInfo();
+      setAndPersistCustomerInfo(info);
+      return info;
+    } catch (e) {
+      console.warn('[RevenueCat] refreshCustomerInfo failed:', e);
+      return null;
+    }
+  }, [setAndPersistCustomerInfo]);
+
   // ── Purchase ───────────────────────────────────────────────────────────────
   const purchase = useCallback(async (pkg) => {
     setIsPurchasing(true);
@@ -281,6 +296,7 @@ function useSubscriptionContext() {
     purchase,
     restore,
     refresh: loadData,
+    refreshCustomerInfo,
   };
 }
 
