@@ -11,8 +11,11 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Purchases from 'react-native-purchases';
 import Constants from 'expo-constants';
+
+const CUSTOMER_INFO_CACHE_KEY = '@revenuecat_customer_info_cache';
 
 // ── Env vars (set after running scripts/seedRevenueCat.ts) ────────────────────
 const TEST_KEY    = process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY;
@@ -157,6 +160,20 @@ function useSubscriptionContext() {
   const [isRestoring, setIsRestoring]   = useState(false);
   const [revCatReady, setRevCatReady]   = useState(_initialized);
 
+  const persistCustomerInfo = useCallback(async (info) => {
+    if (!info) return;
+    try {
+      await AsyncStorage.setItem(CUSTOMER_INFO_CACHE_KEY, JSON.stringify(info));
+    } catch (e) {
+      console.warn('[RevenueCat] Failed to persist customerInfo cache:', e);
+    }
+  }, []);
+
+  const setAndPersistCustomerInfo = useCallback((info) => {
+    setCustomerInfo(info);
+    persistCustomerInfo(info);
+  }, [persistCustomerInfo]);
+
   const loadData = useCallback(async () => {
     if (!_initialized) {
       setIsLoading(false);
@@ -168,7 +185,7 @@ function useSubscriptionContext() {
         Purchases.getCustomerInfo(),
         Purchases.getOfferings(),
       ]);
-      setCustomerInfo(info);
+      setAndPersistCustomerInfo(info);
       setOfferings(offers);
       return info;
     } catch (e) {
@@ -177,7 +194,7 @@ function useSubscriptionContext() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setAndPersistCustomerInfo]);
 
   useEffect(() => {
     if (!_initialized) {
@@ -185,16 +202,33 @@ function useSubscriptionContext() {
       return;
     }
     setRevCatReady(true);
-    loadData();
+
+    // Hydrate from cache immediately so plan-gated UI shows the correct tier
+    // before the network call resolves.
+    AsyncStorage.getItem(CUSTOMER_INFO_CACHE_KEY)
+      .then((raw) => {
+        if (raw) {
+          try {
+            setCustomerInfo(JSON.parse(raw));
+          } catch {
+            // Ignore malformed cache
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        // Always fire the live network fetch regardless of cache outcome.
+        loadData();
+      });
 
     setPostLoginCustomerInfoCallback((info) => {
-      setCustomerInfo(info);
+      setAndPersistCustomerInfo(info);
     });
 
     let unsub = null;
     try {
       unsub = Purchases.addCustomerInfoUpdateListener((info) => {
-        setCustomerInfo(info);
+        setAndPersistCustomerInfo(info);
       });
     } catch {
       // Listener API may not be available on all platforms/versions
@@ -216,24 +250,24 @@ function useSubscriptionContext() {
     setIsPurchasing(true);
     try {
       const { customerInfo: info } = await Purchases.purchasePackage(pkg);
-      setCustomerInfo(info);
+      setAndPersistCustomerInfo(info);
       return info;
     } finally {
       setIsPurchasing(false);
     }
-  }, []);
+  }, [setAndPersistCustomerInfo]);
 
   // ── Restore ────────────────────────────────────────────────────────────────
   const restore = useCallback(async () => {
     setIsRestoring(true);
     try {
       const info = await Purchases.restorePurchases();
-      setCustomerInfo(info);
+      setAndPersistCustomerInfo(info);
       return info;
     } finally {
       setIsRestoring(false);
     }
-  }, []);
+  }, [setAndPersistCustomerInfo]);
 
   return {
     customerInfo,
