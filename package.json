@@ -18,10 +18,31 @@
     "test": "jest"
   },
   "jest": {
-    "testEnvironment": "node",
-    "transform": {},
-    "testMatch": [
-      "**/__tests__/**/*.test.js"
+    "projects": [
+      {
+        "displayName": "unit",
+        "testEnvironment": "node",
+        "transform": {},
+        "testMatch": [
+          "**/__tests__/**/*.test.js"
+        ],
+        "testPathIgnorePatterns": [
+          "/node_modules/",
+          "\\.component\\.test\\.js$"
+        ]
+      },
+      {
+        "displayName": "component",
+        "preset": "jest-expo",
+        "testMatch": [
+          "**/__tests__/**/*.component.test.js"
+        ],
+        "moduleNameMapper": {
+          "^react-native-reanimated$": "<rootDir>/__mocks__/react-native-reanimated.js",
+          "^react-native-vector-icons$": "@expo/vector-icons",
+          "^react-native-vector-icons/(.*)$": "@expo/vector-icons/$1"
+        }
+      }
     ]
   },
   "dependencies": {
@@ -66,9 +87,12 @@
   "private": true,
   "devDependencies": {
     "@jest/globals": "^29.7.0",
+    "@testing-library/react-native": "^13.3.3",
     "@types/react": "~19.2.10",
     "jest": "^29.7.0",
+    "jest-expo": "^56.0.5",
     "patch-package": "^8.0.1",
+    "react-test-renderer": "^19.2.0",
     "typescript": "~5.9.2"
   }
 }
