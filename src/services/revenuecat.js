@@ -172,7 +172,7 @@ function useSubscriptionContext() {
   const loadData = useCallback(async () => {
     if (!_initialized) {
       setIsLoading(false);
-      return;
+      return null;
     }
     setIsLoading(true);
     try {
@@ -182,8 +182,10 @@ function useSubscriptionContext() {
       ]);
       setCustomerInfo(info);
       setOfferings(offers);
+      return info;
     } catch (e) {
       console.error('[RevenueCat] Failed to load data:', e);
+      return null;
     } finally {
       setIsLoading(false);
     }

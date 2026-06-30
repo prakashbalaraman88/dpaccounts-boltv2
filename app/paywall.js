@@ -131,12 +131,14 @@ export default function PaywallScreen() {
     projectLimit,
     purchase,
     restore,
+    refresh,
   } = useSubscription();
 
   const [selectedPkg, setSelectedPkg] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMsg, setErrorMsg]       = useState('');
   const [successMsg, setSuccessMsg]   = useState('');
+  const [isSyncing, setIsSyncing]     = useState(false);
 
   // Sort packages in tier order
   const sortedPackages = useMemo(() => {
@@ -157,14 +159,46 @@ export default function PaywallScreen() {
     if (!selectedPkg) return;
     setErrorMsg('');
     try {
-      await purchase(selectedPkg);
+      const info = await purchase(selectedPkg);
       setShowConfirm(false);
+
+      const pkgToEntitlement = {
+        ledge_starter:   'starter',
+        ledge_pro:       'pro',
+        ledge_unlimited: 'unlimited',
+      };
+      const expectedEntitlement = pkgToEntitlement[selectedPkg.identifier];
+      const isEntitlementActive = (ci) =>
+        expectedEntitlement && ci?.entitlements?.active?.[expectedEntitlement];
+
+      if (isEntitlementActive(info)) {
+        setSuccessMsg(`Welcome to ${TIER_INFO[selectedPkg.identifier]?.name ?? 'Ledge Pro'}! 🎉`);
+        setTimeout(() => router.navigate('/'), 1800);
+        return;
+      }
+
+      // Entitlement not yet reflected — refresh and poll
+      setIsSyncing(true);
+      const POLL_INTERVAL_MS = 1500;
+      const MAX_ATTEMPTS     = 4;
+      let reflected = false;
+      for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        await new Promise((res) => setTimeout(res, POLL_INTERVAL_MS));
+        const fresh = await refresh();
+        if (isEntitlementActive(fresh)) {
+          reflected = true;
+          break;
+        }
+      }
+      setIsSyncing(false);
       setSuccessMsg(`Welcome to ${TIER_INFO[selectedPkg.identifier]?.name ?? 'Ledge Pro'}! 🎉`);
-      setTimeout(() => {
-        router.navigate('/');
-      }, 1800);
+      if (!reflected) {
+        console.warn('[Paywall] Entitlement not reflected after polling; navigating anyway.');
+      }
+      setTimeout(() => router.navigate('/'), 1800);
     } catch (e) {
       setShowConfirm(false);
+      setIsSyncing(false);
       const msg = e?.message ?? String(e);
       if (e?.userCancelled === true || /cancel/i.test(msg)) {
         // User cancelled — silent
@@ -245,8 +279,16 @@ export default function PaywallScreen() {
           </Animated.View>
         )}
 
+        {/* Syncing banner — shown when entitlement is slow to arrive */}
+        {isSyncing && (
+          <View style={[styles.banner, styles.bannerSyncing]}>
+            <ActivityIndicator size="small" color={theme.colors.accent} style={{ marginRight: 8 }} />
+            <Text style={[styles.bannerText, styles.bannerTextSyncing]}>Syncing your plan…</Text>
+          </View>
+        )}
+
         {/* Error / Success banner */}
-        {(errorMsg || successMsg) ? (
+        {!isSyncing && (errorMsg || successMsg) ? (
           <View style={[
             styles.banner,
             errorMsg ? styles.bannerError : styles.bannerSuccess,
@@ -423,12 +465,17 @@ const styles = StyleSheet.create({
   banner: {
     borderRadius: 12,
     padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bannerError: { backgroundColor: theme.colors.expenseMuted },
   bannerSuccess: { backgroundColor: theme.colors.incomingMuted },
+  bannerSyncing: { backgroundColor: `${theme.colors.accent}18` },
   bannerText: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
   bannerTextError: { color: theme.colors.expense },
   bannerTextSuccess: { color: theme.colors.incoming },
+  bannerTextSyncing: { color: theme.colors.accent },
 
   // ── Loading ───────────────────────────────────────────────────────────────
   loadingWrap: { alignItems: 'center', paddingVertical: 40, gap: 12 },
