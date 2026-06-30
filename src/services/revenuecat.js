@@ -83,15 +83,34 @@ export const TIER_ORDER = ['ledge_starter', 'ledge_pro', 'ledge_unlimited'];
 let _initialized = false;
 
 /**
+ * Optional callback invoked with fresh CustomerInfo after a successful logIn().
+ * The SubscriptionProvider registers this so it always reflects the identified
+ * user's entitlements — even when the CustomerInfoUpdateListener is silent
+ * (RC already had this user cached from a previous session / app restart).
+ */
+let _onPostLoginCustomerInfo = null;
+
+export function setPostLoginCustomerInfoCallback(cb) {
+  _onPostLoginCustomerInfo = cb;
+}
+
+/**
  * Associate the RevenueCat SDK with the authenticated user.
  * Call this immediately after login/session restore so that subscription
  * state is correctly attributed and Restore Purchases works cross-device.
+ *
+ * After logIn() succeeds, we always fetch fresh CustomerInfo and push it to
+ * the SubscriptionProvider via _onPostLoginCustomerInfo. This covers the
+ * app-restart path where the listener may not fire because the user identity
+ * is unchanged in RC's local state.
  */
 export async function identifyRevenueCatUser(userId) {
   if (!_initialized || !userId) return;
   try {
     await Purchases.logIn(userId);
     console.log('[RevenueCat] User identified:', userId);
+    const info = await Purchases.getCustomerInfo();
+    if (_onPostLoginCustomerInfo) _onPostLoginCustomerInfo(info);
   } catch (e) {
     console.error('[RevenueCat] Failed to identify user:', e);
   }
@@ -178,6 +197,10 @@ function useSubscriptionContext() {
     setRevCatReady(true);
     loadData();
 
+    setPostLoginCustomerInfoCallback((info) => {
+      setCustomerInfo(info);
+    });
+
     let unsub = null;
     try {
       unsub = Purchases.addCustomerInfoUpdateListener((info) => {
@@ -187,6 +210,7 @@ function useSubscriptionContext() {
       // Listener API may not be available on all platforms/versions
     }
     return () => {
+      setPostLoginCustomerInfoCallback(null);
       if (typeof unsub === 'function') unsub();
     };
   }, []);
