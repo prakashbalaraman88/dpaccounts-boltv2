@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system';
 // SUPABASE CONFIG - Update these with your values
 // from Supabase Dashboard > Project Settings > API
 // ============================================
-const SUPABASE_URL = 'https://sdnarwantjvwqzkaxwhc.supabase.co';
+const SUPABASE_URL = 'https://bouifxfcqeovodyywuqa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkbmFyd2FudGp2d3F6a2F4d2hjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzY5NzQsImV4cCI6MjA5Njc1Mjk3NH0.R1ZWQjKY6itBU7E1S8GGMTE6WRdyFD4aNf_XQAnUs1Y';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
