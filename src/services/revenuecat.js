@@ -20,28 +20,10 @@ const IOS_KEY     = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY;
 const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY;
 
 // ── Public constants ──────────────────────────────────────────────────────────
-
-export const ENTITLEMENT = {
-  STARTER:   'starter',
-  PRO:       'pro',
-  UNLIMITED: 'unlimited',
-};
-
-/** Project limit per plan */
-export const PLAN_LIMITS = {
-  free:      1,
-  starter:   10,
-  pro:       50,
-  unlimited: Infinity,
-};
-
-/** Human-readable plan names */
-export const PLAN_NAMES = {
-  free:      'Free',
-  starter:   'Starter',
-  pro:       'Pro',
-  unlimited: 'Unlimited',
-};
+// Imported from a native-free module so unit tests can consume them without
+// mocking react-native-purchases / expo-constants.
+import { ENTITLEMENT, PLAN_LIMITS, PLAN_NAMES } from '../constants/planLimits';
+export { ENTITLEMENT, PLAN_LIMITS, PLAN_NAMES };
 
 /** Display info for each package key (matches seed script keys) */
 export const TIER_INFO = {

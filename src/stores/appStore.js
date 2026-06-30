@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from './authStore';
+import { annotateProjects } from '../utils/annotateProjects';
 
 // Build-time default so fresh installs work before an admin saves a key.
 // Set EXPO_PUBLIC_AI_API_KEY (or legacy EXPO_PUBLIC_OPENROUTER_API_KEY) in .env (gitignored).
@@ -127,11 +128,7 @@ export const useAppStore = create((set, get) => ({
 
       // Apply lock status: use server result when available; otherwise fall
       // back to index position against the client-side plan limit.
-      const useFallback = Object.keys(lockMap).length === 0;
-      const finalProjects = projectsWithLastMessage.map((p, i) => ({
-        ...p,
-        locked: useFallback ? (limit !== Infinity && i >= limit) : (lockMap[p.id] ?? false),
-      }));
+      const finalProjects = annotateProjects(projectsWithLastMessage, limit, lockMap);
 
       set({ projects: finalProjects, isLoading: false });
     } catch (error) {
