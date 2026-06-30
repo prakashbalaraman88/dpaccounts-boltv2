@@ -22,7 +22,7 @@ export async function signIn(email, password) {
  *
  * Prerequisites for this to work end-to-end:
  *   1. Google Cloud Console → OAuth client → Authorized Redirect URIs must include:
- *      https://sdnarwantjvwqzkaxwhc.supabase.co/auth/v1/callback
+ *      https://bouifxfcqeovodyywuqa.supabase.co/auth/v1/callback
  *   2. Supabase Dashboard → Auth → Providers → Google must be enabled with a
  *      valid Client ID and Client Secret from the Google Cloud Console.
  *
@@ -66,7 +66,7 @@ export async function signInWithGoogle() {
       throw new Error(
         'Google OAuth is not fully configured: the Supabase callback URL is missing from ' +
         'Authorized Redirect URIs in Google Cloud Console. ' +
-        'Add https://sdnarwantjvwqzkaxwhc.supabase.co/auth/v1/callback and try again.'
+        'Add https://bouifxfcqeovodyywuqa.supabase.co/auth/v1/callback and try again.'
       );
     }
     throw new Error(
