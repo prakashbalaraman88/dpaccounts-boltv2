@@ -50,3 +50,7 @@ EXPO_PUBLIC_REVENUECAT_TEST_API_KEY = "test_mVXpHKVKxBjaXOXvDVlzuaJdpKv"
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY = "appl_KcPGHEiokxTqWVKACPjdaUhPRMY"
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY = "goog_aRNerggjBfOrpWGrvUDviNcfMEm"
 REVENUECAT_PROJECT_ID = "proj1c6d5152"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000
