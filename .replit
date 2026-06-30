@@ -42,3 +42,11 @@ waitForPort = 5000
 [deployment]
 deploymentTarget = "autoscale"
 run = ["bash", "-c", "RCT_METRO_PORT=5000 npx expo start --web --port 5000 --host localhost"]
+
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_REVENUECAT_TEST_API_KEY = "test_mVXpHKVKxBjaXOXvDVlzuaJdpKv"
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY = "appl_KcPGHEiokxTqWVKACPjdaUhPRMY"
+EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY = "goog_aRNerggjBfOrpWGrvUDviNcfMEm"
+REVENUECAT_PROJECT_ID = "proj1c6d5152"

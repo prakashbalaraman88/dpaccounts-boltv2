@@ -19,6 +19,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~55.0.11",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@replit/connectors-sdk": "^0.4.1",
     "@replit/revenuecat-sdk": "^4.2.0",
     "@supabase/supabase-js": "^2.98.0",
     "babel-preset-expo": "^55.0.8",
