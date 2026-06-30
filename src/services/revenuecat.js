@@ -25,6 +25,12 @@ const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY;
 import { ENTITLEMENT, PLAN_LIMITS, PLAN_NAMES } from '../constants/planLimits';
 export { ENTITLEMENT, PLAN_LIMITS, PLAN_NAMES };
 
+// ── Pure plan-derivation helper ────────────────────────────────────────────────
+// Lives in a native-free module so unit tests can exercise the same logic
+// path without mocking react-native-purchases or expo-constants.
+import { activePlanFromCustomerInfo } from '../utils/activePlan';
+export { activePlanFromCustomerInfo };
+
 /** Display info for each package key (matches seed script keys) */
 export const TIER_INFO = {
   ledge_starter: {
@@ -200,13 +206,8 @@ function useSubscriptionContext() {
   }, []);
 
   // ── Derive active plan ─────────────────────────────────────────────────────
-  const activePlan = (() => {
-    const active = customerInfo?.entitlements?.active ?? {};
-    if (active[ENTITLEMENT.UNLIMITED]) return 'unlimited';
-    if (active[ENTITLEMENT.PRO])       return 'pro';
-    if (active[ENTITLEMENT.STARTER])   return 'starter';
-    return 'free';
-  })();
+  // Uses the shared pure helper so unit tests cover the exact same code path.
+  const activePlan = activePlanFromCustomerInfo(customerInfo);
 
   const projectLimit = PLAN_LIMITS[activePlan];
 
