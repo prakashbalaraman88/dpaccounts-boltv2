@@ -161,7 +161,7 @@ export default function PaywallScreen() {
       setShowConfirm(false);
       setSuccessMsg(`Welcome to ${TIER_INFO[selectedPkg.identifier]?.name ?? 'Ledge Pro'}! 🎉`);
       setTimeout(() => {
-        router.canGoBack() ? router.back() : router.replace('/');
+        router.navigate('/');
       }, 1800);
     } catch (e) {
       setShowConfirm(false);
@@ -183,7 +183,7 @@ export default function PaywallScreen() {
       if (hasSub) {
         setSuccessMsg('Purchases restored!');
         setTimeout(() => {
-          router.canGoBack() ? router.back() : router.replace('/');
+          router.navigate('/');
         }, 1500);
       } else {
         setErrorMsg('No previous purchases found for this account.');
@@ -209,10 +209,11 @@ export default function PaywallScreen() {
       {/* Header */}
       <Animated.View entering={FadeIn.duration(300)} style={styles.header}>
         <Pressable
+          testID="paywall-close-btn"
           style={styles.backBtn}
-          onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
+          onPress={() => router.replace('/')}
         >
-          <IconButton icon="close" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0 }} />
+          <IconButton icon="close" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0, pointerEvents: 'none' }} />
         </Pressable>
         <Text style={styles.headerTitle}>Choose a Plan</Text>
         <View style={{ width: 44 }} />

@@ -94,15 +94,11 @@ export default function SettingsScreen() {
       {/* Header */}
       <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
         <Pressable
+          testID="settings-back-btn"
           style={styles.backButton}
-          onPress={() => router.canGoBack() ? router.back() : router.replace('/')}
+          onPress={() => router.replace('/')}
         >
-          <IconButton
-            icon="arrow-left"
-            iconColor={theme.colors.onSurface}
-            size={22}
-            style={{ margin: 0 }}
-          />
+          <IconButton icon="arrow-left" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0, pointerEvents: 'none' }} />
         </Pressable>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 44 }} />
