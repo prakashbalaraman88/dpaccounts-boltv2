@@ -18,8 +18,15 @@ export async function signIn(email, password) {
 }
 
 /**
- * Sign in with Google via Supabase OAuth + expo-web-browser
- * Returns session data, or null if the user cancelled.
+ * Sign in with Google via Supabase OAuth + expo-web-browser (PKCE flow).
+ *
+ * Prerequisites for this to work end-to-end:
+ *   1. Google Cloud Console → OAuth client → Authorized Redirect URIs must include:
+ *      https://sdnarwantjvwqzkaxwhc.supabase.co/auth/v1/callback
+ *   2. Supabase Dashboard → Auth → Providers → Google must be enabled with a
+ *      valid Client ID and Client Secret from the Google Cloud Console.
+ *
+ * Returns session data on success, or null if the user cancelled.
  */
 export async function signInWithGoogle() {
   const redirectUri = AuthSession.makeRedirectUri({
@@ -48,9 +55,45 @@ export async function signInWithGoogle() {
     throw new Error('Google Sign-In was not completed');
   }
 
+  // Check if the callback URL contains an OAuth error before trying to exchange.
+  // The most common case is redirect_uri_mismatch when Google Cloud Console is
+  // missing the Supabase callback URL in Authorized Redirect URIs.
+  const callbackUrl = new URL(result.url);
+  const oauthError = callbackUrl.searchParams.get('error');
+  const oauthErrorDesc = callbackUrl.searchParams.get('error_description');
+  if (oauthError) {
+    if (oauthError === 'redirect_uri_mismatch') {
+      throw new Error(
+        'Google OAuth is not fully configured: the Supabase callback URL is missing from ' +
+        'Authorized Redirect URIs in Google Cloud Console. ' +
+        'Add https://sdnarwantjvwqzkaxwhc.supabase.co/auth/v1/callback and try again.'
+      );
+    }
+    throw new Error(
+      `Google Sign-In failed: ${oauthErrorDesc || oauthError}`
+    );
+  }
+
+  // The PKCE code must be present for the exchange to succeed.
+  const code = callbackUrl.searchParams.get('code');
+  if (!code) {
+    throw new Error(
+      'Google Sign-In: no authorization code was returned in the callback URL'
+    );
+  }
+
   const { data: sessionData, error: sessionError } =
     await supabase.auth.exchangeCodeForSession(result.url);
-  if (sessionError) throw sessionError;
+
+  if (sessionError) {
+    console.error('[Auth] exchangeCodeForSession error:', sessionError.message);
+    throw sessionError;
+  }
+
+  if (!sessionData?.session) {
+    throw new Error('Google Sign-In: session exchange succeeded but no session was returned');
+  }
+
   return sessionData;
 }
 

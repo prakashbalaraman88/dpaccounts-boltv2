@@ -70,8 +70,14 @@ export default function LoginScreen() {
       const msg = e.message || '';
       if (/cancelled|cancel/i.test(msg)) {
         // silent cancel
+      } else if (/redirect_uri_mismatch|not fully configured/i.test(msg)) {
+        setError(
+          'Google Sign-In is not set up yet. The app administrator needs to add the callback URL to Google Cloud Console.'
+        );
       } else if (/network|fetch/i.test(msg)) {
         setError('Network error. Check your connection and try again.');
+      } else if (/no authorization code/i.test(msg)) {
+        setError('Google Sign-In did not complete. Please try again.');
       } else {
         setError('Google Sign-In failed. Please try again.');
       }
