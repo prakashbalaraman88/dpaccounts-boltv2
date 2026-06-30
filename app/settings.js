@@ -241,7 +241,7 @@ export default function SettingsScreen() {
             </View>
             <View>
               <Text style={styles.sectionTitle}>About</Text>
-              <Text style={styles.sectionTag}>v1.0.0</Text>
+              <Text style={styles.sectionTag}>v1.0.3</Text>
             </View>
           </View>
 
