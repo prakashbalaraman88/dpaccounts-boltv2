@@ -1,33 +1,42 @@
 import { useEffect, useState } from 'react';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, ActivityIndicator, Text, StyleSheet, Platform } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { supabase } from '../../src/services/supabase';
 
 export default function AuthCallback() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [status, setStatus] = useState('Completing sign-in…');
 
   useEffect(() => {
     async function handleCallback() {
       try {
-        const url = window.location.href;
-        const params = new URL(url).searchParams;
-
-        const oauthError = params.get('error');
+        const oauthError = params.error;
         if (oauthError) {
-          const desc = params.get('error_description') || oauthError;
-          router.replace('/login?oauthError=' + encodeURIComponent(desc));
+          const desc = params.error_description || oauthError;
+          router.replace('/login?oauthError=' + encodeURIComponent(String(desc)));
           return;
         }
 
-        const code = params.get('code');
+        const code = params.code;
         if (!code) {
           router.replace('/login?oauthError=' + encodeURIComponent('No authorization code returned.'));
           return;
         }
 
         setStatus('Signing you in…');
-        const { error } = await supabase.auth.exchangeCodeForSession(url);
+
+        let urlToExchange;
+        if (Platform.OS === 'web') {
+          urlToExchange = window.location.href;
+        } else {
+          urlToExchange = Linking.createURL('auth/callback', {
+            queryParams: { code: String(code) },
+          });
+        }
+
+        const { error } = await supabase.auth.exchangeCodeForSession(urlToExchange);
         if (error) {
           router.replace('/login?oauthError=' + encodeURIComponent(error.message));
           return;
