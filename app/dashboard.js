@@ -134,12 +134,15 @@ export default function DashboardScreen() {
     }, [])
   );
 
-  const totalIncoming = projects.reduce((sum, p) => sum + p.total_incoming, 0);
-  const totalExpense = projects.reduce((sum, p) => sum + p.total_expense, 0);
+  const unlockedProjects = projects.filter((p) => !p.locked);
+  const lockedCount = projects.length - unlockedProjects.length;
+
+  const totalIncoming = unlockedProjects.reduce((sum, p) => sum + p.total_incoming, 0);
+  const totalExpense = unlockedProjects.reduce((sum, p) => sum + p.total_expense, 0);
   const netPnl = totalIncoming - totalExpense;
-  const totalBudget = projects.reduce((sum, p) => sum + (p.budget || 0), 0);
-  const projectCount = projects.length;
-  const activeProjects = projects.filter((p) => p.total_incoming > 0 || p.total_expense > 0).length;
+  const totalBudget = unlockedProjects.reduce((sum, p) => sum + (p.budget || 0), 0);
+  const projectCount = unlockedProjects.length;
+  const activeProjects = unlockedProjects.filter((p) => p.total_incoming > 0 || p.total_expense > 0).length;
 
   return (
     <View style={styles.container}>
@@ -154,8 +157,18 @@ export default function DashboardScreen() {
         </Pressable>
       </Animated.View>
 
+      {lockedCount > 0 && (
+        <Pressable style={styles.lockedBanner} onPress={() => router.push('/paywall')}>
+          <IconButton icon="lock-outline" iconColor="#C9A87C" size={18} style={{ margin: 0 }} />
+          <Text style={styles.lockedBannerText}>
+            {lockedCount} project{lockedCount !== 1 ? 's' : ''} hidden — upgrade to include them in analytics
+          </Text>
+          <IconButton icon="chevron-right" iconColor="#C9A87C" size={16} style={{ margin: 0 }} />
+        </Pressable>
+      )}
+
       <FlatList
-        data={projects}
+        data={unlockedProjects}
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item, index }) => <ProjectPnlCard project={item} index={index} />}
         contentContainerStyle={styles.listContent}
@@ -239,7 +252,7 @@ export default function DashboardScreen() {
             })()}
 
             {/* Section Header */}
-            {projects.length > 0 && (
+            {unlockedProjects.length > 0 && (
               <Animated.View entering={FadeIn.delay(200)} style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Project-wise P&L</Text>
               </Animated.View>
@@ -589,6 +602,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.colors.secondary,
     fontStyle: 'italic',
+  },
+
+  // Locked projects banner
+  lockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2A2318',
+    borderBottomWidth: 1,
+    borderBottomColor: '#3D3020',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  lockedBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#C9A87C',
+    fontWeight: '500',
   },
 
   // Empty
