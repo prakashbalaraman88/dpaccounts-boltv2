@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, StyleSheet, Pressable, Linking, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { Text, TextInput, IconButton } from 'react-native-paper';
 import Animated, {
@@ -9,7 +9,7 @@ import Animated, {
   withSpring,
   withSequence,
 } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { theme } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
 import { useAuthStore } from '../src/stores/authStore';
@@ -47,7 +47,13 @@ export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState(aiApiKey);
   const [saved, setSaved] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const { activePlan, projectLimit, isLoading: subLoading } = useSubscription();
+  const { activePlan, projectLimit, isLoading: subLoading, refresh } = useSubscription();
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   const providerName = useMemo(() => {
     if (!apiKey) return 'OpenRouter / WaveSpeed';
