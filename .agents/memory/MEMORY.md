@@ -3,3 +3,4 @@
 - [Supabase project URL](supabase-config.md) — correct project ref is sdnarwantjvwqzkaxwhc; bouifxfcqeovodyywuqa was an incorrect URL that got written into supabase.js at some point.
 - [RN Paper nav button pattern](rnpaper-nav-button.md) — Pressable(onPress)+IconButton(style.pointerEvents:'none') is the only reliable navigation button on web.
 - [runTest login iteration limit](runtest-login-limit.md) — Supabase email login burns ~5 of 10 allowed iterations; keep remaining test steps to ≤4 or auth will time out.
+- [RN text node in View](rn-text-node-in-view.md) — {'' && <View>} evaluates to '' and React Native renders it as a text node; always use ternary + null.

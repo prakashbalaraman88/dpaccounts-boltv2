@@ -24,8 +24,8 @@ function PlanBadge({ label }) {
   );
 }
 
-function TierCard({ pkg, tierInfo, isSelected, onSelect }) {
-  const priceString = pkg?.product?.priceString ?? '—';
+function TierCard({ pkg, tierInfo, isSelected, onSelect, isStatic }) {
+  const priceString = pkg?.product?.priceString ?? tierInfo?.priceLabel ?? '—';
   const isPopular   = tierInfo?.isPopular ?? false;
 
   return (
@@ -33,6 +33,7 @@ function TierCard({ pkg, tierInfo, isSelected, onSelect }) {
       style={[
         styles.tierCard,
         isSelected && { borderColor: tierInfo?.color ?? theme.colors.accent, borderWidth: 2 },
+        isStatic && { opacity: 0.92 },
       ]}
       onPress={() => { impactLight(); onSelect(); }}
     >
@@ -94,8 +95,7 @@ function ConfirmModal({ visible, pkg, tierInfo, onConfirm, onCancel, isPurchasin
 
           <Text style={styles.confirmTitle}>Subscribe to {tierInfo?.name}?</Text>
           <Text style={styles.confirmDesc}>
-            {tierInfo?.limitText} · {pkg?.product?.priceString ?? '—'}/month{'\n'}
-            You can cancel anytime from your device settings.
+            {`${tierInfo?.limitText ?? ''} · ${pkg?.product?.priceString ?? '—'}/month\nYou can cancel anytime from your device settings.`}
           </Text>
 
           {isPurchasing ? (
@@ -230,10 +230,7 @@ export default function PaywallScreen() {
             <IconButton icon="crown-outline" iconColor={theme.colors.accent} size={32} style={{ margin: 0 }} />
           </View>
           <Text style={styles.heroTitle}>Unlock More Projects</Text>
-          <Text style={styles.heroSub}>
-            Free plan includes 1 project.{'\n'}
-            Upgrade to track more clients and grow your business.
-          </Text>
+          <Text style={styles.heroSub}>{'Free plan includes 1 project.\nUpgrade to track more clients and grow your business.'}</Text>
         </Animated.View>
 
         {/* Current plan pill */}
@@ -249,7 +246,7 @@ export default function PaywallScreen() {
         )}
 
         {/* Error / Success banner */}
-        {(errorMsg || successMsg) && (
+        {(errorMsg || successMsg) ? (
           <View style={[
             styles.banner,
             errorMsg ? styles.bannerError : styles.bannerSuccess,
@@ -258,7 +255,7 @@ export default function PaywallScreen() {
               {errorMsg || successMsg}
             </Text>
           </View>
-        )}
+        ) : null}
 
         {/* Loading */}
         {isLoading && (
@@ -268,25 +265,25 @@ export default function PaywallScreen() {
           </View>
         )}
 
-        {/* No offerings (env vars not set yet) */}
-        {!isLoading && sortedPackages.length === 0 && (
-          <View style={styles.noOfferings}>
-            <IconButton icon="cloud-off-outline" iconColor={theme.colors.secondary} size={32} style={{ margin: 0 }} />
-            <Text style={styles.noOfferingsTitle}>Plans Unavailable</Text>
-            <Text style={styles.noOfferingsText}>
-              Subscription plans are still being configured.{'\n'}Please check back soon.
-            </Text>
-          </View>
-        )}
-
-        {/* Tier cards */}
-        {!isLoading && sortedPackages.map((pkg, i) => (
+        {/* Tier cards — live packages when available, static preview otherwise */}
+        {!isLoading && sortedPackages.length > 0 && sortedPackages.map((pkg, i) => (
           <Animated.View key={pkg.identifier} entering={FadeInDown.delay(160 + i * 80).duration(280)}>
             <TierCard
               pkg={pkg}
               tierInfo={TIER_INFO[pkg.identifier]}
               isSelected={false}
               onSelect={() => handleSelectTier(pkg)}
+            />
+          </Animated.View>
+        ))}
+
+        {!isLoading && sortedPackages.length === 0 && TIER_ORDER.map((key, i) => (
+          <Animated.View key={key} entering={FadeInDown.delay(160 + i * 80).duration(280)}>
+            <TierCard
+              tierInfo={TIER_INFO[key]}
+              isSelected={false}
+              isStatic
+              onSelect={() => setErrorMsg('Purchase available once the app is live on the App Store.')}
             />
           </Animated.View>
         ))}
@@ -433,12 +430,9 @@ const styles = StyleSheet.create({
   bannerTextError: { color: theme.colors.expense },
   bannerTextSuccess: { color: theme.colors.incoming },
 
-  // ── Loading / no offerings ────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────
   loadingWrap: { alignItems: 'center', paddingVertical: 40, gap: 12 },
   loadingText: { fontSize: 14, color: theme.colors.secondary },
-  noOfferings: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-  noOfferingsTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.onSurface },
-  noOfferingsText: { fontSize: 13, color: theme.colors.secondary, textAlign: 'center', lineHeight: 20 },
 
   // ── Tier card ─────────────────────────────────────────────────────────────
   tierCard: {
