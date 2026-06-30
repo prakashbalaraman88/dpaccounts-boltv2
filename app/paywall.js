@@ -166,7 +166,7 @@ export default function PaywallScreen() {
     } catch (e) {
       setShowConfirm(false);
       const msg = e?.message ?? String(e);
-      if (/cancel/i.test(msg) || /1/i.test(e?.code)) {
+      if (e?.userCancelled === true || /cancel/i.test(msg)) {
         // User cancelled — silent
       } else {
         setErrorMsg('Purchase failed. Please try again.');

@@ -79,6 +79,35 @@ export const TIER_ORDER = ['ledge_starter', 'ledge_pro', 'ledge_unlimited'];
 
 let _initialized = false;
 
+/**
+ * Associate the RevenueCat SDK with the authenticated user.
+ * Call this immediately after login/session restore so that subscription
+ * state is correctly attributed and Restore Purchases works cross-device.
+ */
+export async function identifyRevenueCatUser(userId) {
+  if (!_initialized || !userId) return;
+  try {
+    await Purchases.logIn(userId);
+    console.log('[RevenueCat] User identified:', userId);
+  } catch (e) {
+    console.error('[RevenueCat] Failed to identify user:', e);
+  }
+}
+
+/**
+ * Reset the RevenueCat SDK to an anonymous user on logout.
+ * Call this when the user signs out.
+ */
+export async function logoutRevenueCatUser() {
+  if (!_initialized) return;
+  try {
+    await Purchases.logOut();
+    console.log('[RevenueCat] User logged out.');
+  } catch (e) {
+    console.warn('[RevenueCat] Logout error (non-fatal):', e);
+  }
+}
+
 function getApiKey() {
   if (__DEV__ || Platform.OS === 'web' || Constants.executionEnvironment === 'storeClient') {
     return TEST_KEY;

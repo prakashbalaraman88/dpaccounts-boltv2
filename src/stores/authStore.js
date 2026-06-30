@@ -8,6 +8,7 @@ import {
   getUserProfile,
   onAuthStateChange,
 } from '../services/auth';
+import { identifyRevenueCatUser, logoutRevenueCatUser } from '../services/revenuecat';
 
 export const useAuthStore = create((set, get) => ({
   // State
@@ -38,6 +39,7 @@ export const useAuthStore = create((set, get) => ({
           isAdmin: profile?.role === 'admin',
           isLoading: false,
         });
+        identifyRevenueCatUser(session.user.id);
       } else {
         set({ session: null, user: null, profile: null, isAdmin: false, isLoading: false });
       }
@@ -46,6 +48,7 @@ export const useAuthStore = create((set, get) => ({
       onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
           set({ session: null, user: null, profile: null, isAdmin: false });
+          logoutRevenueCatUser();
         } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
           if (session?.user) {
             try {
@@ -59,6 +62,7 @@ export const useAuthStore = create((set, get) => ({
                 profile,
                 isAdmin: profile?.role === 'admin',
               });
+              identifyRevenueCatUser(session.user.id);
             } catch (e) {
               console.error('Error fetching/creating profile on auth change:', e);
             }
@@ -83,6 +87,7 @@ export const useAuthStore = create((set, get) => ({
       profile,
       isAdmin: profile?.role === 'admin',
     });
+    identifyRevenueCatUser(data.user.id);
     return profile;
   },
 
@@ -104,6 +109,7 @@ export const useAuthStore = create((set, get) => ({
       profile,
       isAdmin: profile?.role === 'admin',
     });
+    identifyRevenueCatUser(data.user.id);
     return profile;
   },
 
@@ -113,6 +119,7 @@ export const useAuthStore = create((set, get) => ({
   logout: async () => {
     await signOut();
     set({ session: null, user: null, profile: null, isAdmin: false });
+    logoutRevenueCatUser();
   },
 
   /**
