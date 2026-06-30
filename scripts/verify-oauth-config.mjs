@@ -11,7 +11,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const SUPABASE_URL = 'https://sdnarwantjvwqzkaxwhc.supabase.co';
+const SUPABASE_URL = 'https://bouifxfcqeovodyywuqa.supabase.co';
 const EXPECTED_SCHEME = 'interiorbooks';
 const REQUIRED_GOOGLE_REDIRECT_URI = `${SUPABASE_URL}/auth/v1/callback`;
 
@@ -86,8 +86,8 @@ check(
 const supabaseContent = fs.readFileSync('src/services/supabase.js', 'utf8');
 check(
   'supabase.js → uses correct project URL',
-  supabaseContent.includes('sdnarwantjvwqzkaxwhc.supabase.co'),
-  supabaseContent.includes('sdnarwantjvwqzkaxwhc.supabase.co')
+  supabaseContent.includes('bouifxfcqeovodyywuqa.supabase.co'),
+  supabaseContent.includes('bouifxfcqeovodyywuqa.supabase.co')
     ? `URL: ${SUPABASE_URL}`
     : 'Wrong URL — check for typos or stale config'
 );

@@ -1,6 +1,6 @@
 - [Expo web on Replit](expo-web-replit.md) — Three required fixes to run Expo/React Native web in Replit: native module safety, host binding, CI mode.
 - [Android share pipeline](android-share-pipeline.md) — How the receipt sharing pipeline works and the root causes of its bugs.
-- [Supabase project URL](supabase-config.md) — correct project ref is sdnarwantjvwqzkaxwhc; bouifxfcqeovodyywuqa was an incorrect URL that got written into supabase.js at some point.
+- [Supabase config](supabase-config.md) — correct project is bouifxfcqeovodyywuqa; old sdnarwantjvwqzkaxwhc is inaccessible (unknown account owner), migrated June 2026.
 - [RN Paper nav button pattern](rnpaper-nav-button.md) — Pressable(onPress)+IconButton(style.pointerEvents:'none') is the only reliable navigation button on web.
 - [runTest login iteration limit](runtest-login-limit.md) — Supabase email login burns ~5 of 10 allowed iterations; keep remaining test steps to ≤4 or auth will time out.
 - [RN text node in View](rn-text-node-in-view.md) — {'' && <View>} evaluates to '' and React Native renders it as a text node; always use ternary + null.
