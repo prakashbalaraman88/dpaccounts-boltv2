@@ -32,6 +32,8 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const login = useAuthStore((s) => s.login);
   const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
+  const profileError = useAuthStore((s) => s.profileError);
+  const clearProfileError = useAuthStore((s) => s.clearProfileError);
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -39,6 +41,7 @@ export default function LoginScreen() {
       return;
     }
     setError('');
+    clearProfileError();
     setIsLoading(true);
     try {
       await login(email, password);
@@ -59,6 +62,7 @@ export default function LoginScreen() {
 
   const handleGoogleLogin = async () => {
     setError('');
+    clearProfileError();
     setIsGoogleLoading(true);
     try {
       const profile = await loginWithGoogle();
@@ -70,6 +74,11 @@ export default function LoginScreen() {
       const msg = e.message || '';
       if (/cancelled|cancel/i.test(msg)) {
         // silent cancel
+      } else if (e.name === 'ProfileCreationError') {
+        setError(
+          'Your Google account was verified, but we couldn\u2019t finish creating your profile. ' +
+          'Please try signing in again. If the problem continues, contact support.'
+        );
       } else if (/redirect_uri_mismatch|not fully configured/i.test(msg)) {
         setError(
           'Google Sign-In is not set up yet. The app administrator needs to add the callback URL to Google Cloud Console.'
@@ -112,6 +121,15 @@ export default function LoginScreen() {
         <Animated.View entering={FadeInDown.delay(300).duration(380)} style={styles.card}>
           <Text style={styles.cardTitle}>Sign In</Text>
           <Text style={styles.cardSubtitle}>Continue with Google or your credentials</Text>
+
+          {profileError ? (
+            <View style={[styles.errorBanner, styles.profileErrorBanner]}>
+              <Text style={styles.errorText}>{profileError}</Text>
+              <Pressable onPress={clearProfileError} style={styles.profileErrorDismiss}>
+                <Text style={styles.profileErrorDismissText}>Dismiss</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {error ? (
             <View style={styles.errorBanner}>
@@ -271,6 +289,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
+  },
+  profileErrorBanner: {
+    borderWidth: 1,
+    borderColor: theme.colors.expense,
+  },
+  profileErrorDismiss: {
+    marginTop: 8,
+    alignSelf: 'center',
+  },
+  profileErrorDismissText: {
+    color: theme.colors.expense,
+    fontSize: 12,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   errorText: {
     color: theme.colors.expense,

@@ -2,6 +2,23 @@ import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import { supabase } from './supabase';
 
+/**
+ * Thrown when a new OAuth user's profile row cannot be created.
+ * The caller should sign the user out to avoid a broken half-logged-in state
+ * and then surface a retry / contact-support message.
+ */
+export class ProfileCreationError extends Error {
+  constructor(cause) {
+    super(
+      cause?.message ||
+        'Your account was created but your profile could not be set up. ' +
+        'Please try signing in again or contact support.'
+    );
+    this.name = 'ProfileCreationError';
+    this.cause = cause;
+  }
+}
+
 // Required for the OAuth browser session to complete on iOS
 WebBrowser.maybeCompleteAuthSession();
 
@@ -172,7 +189,7 @@ export async function getUserProfile(userId, oauthMeta = null) {
       .select()
       .single();
 
-    if (createError) throw createError;
+    if (createError) throw new ProfileCreationError(createError);
     return newProfile;
   }
 

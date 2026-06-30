@@ -7,6 +7,7 @@ import {
   getSession,
   getUserProfile,
   onAuthStateChange,
+  ProfileCreationError,
 } from '../services/auth';
 import { identifyRevenueCatUser, logoutRevenueCatUser } from '../services/revenuecat';
 
@@ -17,6 +18,7 @@ export const useAuthStore = create((set, get) => ({
   profile: null,
   isLoading: true,
   isAdmin: false,
+  profileError: null,
 
   /**
    * Initialize auth state — called once on app start.
@@ -28,20 +30,39 @@ export const useAuthStore = create((set, get) => ({
 
       const session = await getSession();
       if (session?.user) {
-        const profile = await getUserProfile(
-          session.user.id,
-          session.user.user_metadata
-        );
-        set({
-          session,
-          user: session.user,
-          profile,
-          isAdmin: profile?.role === 'admin',
-          isLoading: false,
-        });
-        identifyRevenueCatUser(session.user.id);
+        try {
+          const profile = await getUserProfile(
+            session.user.id,
+            session.user.user_metadata
+          );
+          set({
+            session,
+            user: session.user,
+            profile,
+            isAdmin: profile?.role === 'admin',
+            isLoading: false,
+            profileError: null,
+          });
+          identifyRevenueCatUser(session.user.id);
+        } catch (profileErr) {
+          if (profileErr instanceof ProfileCreationError) {
+            console.error('[Auth] Profile creation failed on init, signing out:', profileErr);
+            await signOut().catch(() => {});
+            set({
+              session: null,
+              user: null,
+              profile: null,
+              isAdmin: false,
+              isLoading: false,
+              profileError:
+                'We could not finish setting up your account. Please sign in again or contact support.',
+            });
+          } else {
+            throw profileErr;
+          }
+        }
       } else {
-        set({ session: null, user: null, profile: null, isAdmin: false, isLoading: false });
+        set({ session: null, user: null, profile: null, isAdmin: false, isLoading: false, profileError: null });
       }
 
       // Listen for auth changes (token refresh, sign-out, OAuth callback)
@@ -61,10 +82,25 @@ export const useAuthStore = create((set, get) => ({
                 user: session.user,
                 profile,
                 isAdmin: profile?.role === 'admin',
+                profileError: null,
               });
               identifyRevenueCatUser(session.user.id);
             } catch (e) {
-              console.error('Error fetching/creating profile on auth change:', e);
+              if (e instanceof ProfileCreationError) {
+                console.error('[Auth] Profile creation failed on auth change, signing out:', e);
+                await signOut().catch(() => {});
+                set({
+                  session: null,
+                  user: null,
+                  profile: null,
+                  isAdmin: false,
+                  profileError:
+                    'We could not finish setting up your account. Please sign in again or contact support.',
+                });
+                logoutRevenueCatUser();
+              } else {
+                console.error('Error fetching/creating profile on auth change:', e);
+              }
             }
           }
         }
@@ -102,15 +138,27 @@ export const useAuthStore = create((set, get) => ({
 
     // onAuthStateChange handles store updates, but we also update here
     // immediately to avoid a blank render while the listener fires.
-    const profile = await getUserProfile(data.user.id, data.user.user_metadata);
-    set({
-      session: data.session,
-      user: data.user,
-      profile,
-      isAdmin: profile?.role === 'admin',
-    });
-    identifyRevenueCatUser(data.user.id);
-    return profile;
+    try {
+      const profile = await getUserProfile(data.user.id, data.user.user_metadata);
+      set({
+        session: data.session,
+        user: data.user,
+        profile,
+        isAdmin: profile?.role === 'admin',
+        profileError: null,
+      });
+      identifyRevenueCatUser(data.user.id);
+      return profile;
+    } catch (e) {
+      if (e instanceof ProfileCreationError) {
+        console.error('[Auth] Profile creation failed during Google login, signing out:', e);
+        await signOut().catch(() => {});
+        set({ session: null, user: null, profile: null, isAdmin: false });
+        logoutRevenueCatUser();
+        throw e; // re-throw so login.js can surface a friendly message
+      }
+      throw e;
+    }
   },
 
   /**
@@ -132,6 +180,11 @@ export const useAuthStore = create((set, get) => ({
       set({ profile: { ...profile, must_change_password: false } });
     }
   },
+
+  /**
+   * Clear the profileError banner (e.g. when the user dismisses it or retries)
+   */
+  clearProfileError: () => set({ profileError: null }),
 
   /**
    * Refresh profile data from Supabase
