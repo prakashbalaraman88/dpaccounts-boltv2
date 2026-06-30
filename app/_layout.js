@@ -11,6 +11,7 @@ import { Text } from 'react-native-paper';
 import { theme } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
 import { useAuthStore } from '../src/stores/authStore';
+import { initializeRevenueCat, SubscriptionProvider } from '../src/services/revenuecat';
 
 const navigationTheme = {
   dark: true,
@@ -240,13 +241,21 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
+  try {
+    initializeRevenueCat();
+  } catch (err) {
+    console.warn('[RevenueCat] Init error:', err?.message ?? err);
+  }
+
   return (
     <ErrorBoundary>
       <CrashGuard>
         <ShareIntentProvider options={{ resetOnBackground: false, debug: __DEV__ }}>
           <PaperProvider theme={theme}>
             <ThemeProvider value={navigationTheme}>
-              <RootLayoutInner />
+              <SubscriptionProvider>
+                <RootLayoutInner />
+              </SubscriptionProvider>
             </ThemeProvider>
           </PaperProvider>
         </ShareIntentProvider>

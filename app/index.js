@@ -22,6 +22,7 @@ import { theme, formatRupees } from '../src/constants/theme';
 import { formatRelativeDay } from '../src/utils/datetime';
 import { useAppStore } from '../src/stores/appStore';
 import { useAuthStore } from '../src/stores/authStore';
+import { useSubscription } from '../src/services/revenuecat';
 import { impactLight, impactMedium, notificationSuccess } from '../src/utils/haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -174,6 +175,8 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { projects, loadProjects, createProject } = useAppStore();
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const { projectLimit, activePlan } = useSubscription();
+  const atProjectLimit = projects.length >= projectLimit;
   const [showNewProject, setShowNewProject] = useState(false);
   const [showRecentClients, setShowRecentClients] = useState(false);
   const [clientName, setClientName] = useState('');
@@ -229,6 +232,15 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Failed to create project:', error);
+    }
+  };
+
+  const handleNewProjectPress = () => {
+    if (atProjectLimit) {
+      router.push('/paywall');
+    } else {
+      impactMedium();
+      setShowNewProject(true);
     }
   };
 
@@ -314,10 +326,10 @@ export default function HomeScreen() {
       <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
       <View style={styles.quickActionsRow}>
         <QuickAction
-          icon="plus-circle-outline"
+          icon={atProjectLimit ? "lock-outline" : "plus-circle-outline"}
           label="New Project"
-          sublabel="create"
-          onPress={() => setShowNewProject(true)}
+          sublabel={atProjectLimit ? "upgrade" : "create"}
+          onPress={handleNewProjectPress}
           delay={200}
           color="rgba(74,222,128,0.15)"
         />
@@ -406,10 +418,15 @@ export default function HomeScreen() {
         {/* Center FAB */}
         <View style={styles.fabContainer}>
           <Pressable
-            style={styles.fabButton}
-            onPress={() => { impactMedium(); setShowNewProject(true); }}
+            style={[styles.fabButton, atProjectLimit && styles.fabButtonLocked]}
+            onPress={handleNewProjectPress}
           >
-            <IconButton icon="plus" iconColor="#080808" size={26} style={{ margin: 0 }} />
+            <IconButton
+              icon={atProjectLimit ? "crown-outline" : "plus"}
+              iconColor={atProjectLimit ? theme.colors.accent : "#080808"}
+              size={26}
+              style={{ margin: 0 }}
+            />
           </Pressable>
         </View>
 
@@ -908,6 +925,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 8,
+  },
+  fabButtonLocked: {
+    backgroundColor: theme.colors.accentContainer,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
   },
 
   // ---- Modal ----

@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { theme } from '../src/constants/theme';
 import { useAppStore } from '../src/stores/appStore';
 import { useAuthStore } from '../src/stores/authStore';
+import { useSubscription, PLAN_NAMES, PLAN_LIMITS } from '../src/services/revenuecat';
 
 function AnimatedButton({ onPress, disabled, children, style }) {
   const scale = useSharedValue(1);
@@ -46,6 +47,7 @@ export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState(aiApiKey);
   const [saved, setSaved] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const { activePlan, projectLimit, isLoading: subLoading } = useSubscription();
 
   const providerName = useMemo(() => {
     if (!apiKey) return 'OpenRouter / WaveSpeed';
@@ -143,6 +145,55 @@ export default function SettingsScreen() {
             <IconButton icon="lock-reset" iconColor={theme.colors.primary} size={18} style={{ margin: 0 }} />
             <Text style={styles.changePasswordText}>Change Password</Text>
           </Pressable>
+        </Animated.View>
+
+        {/* Subscription Section */}
+        <Animated.View entering={FadeInDown.delay(150).duration(260)} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIconWrap, { backgroundColor: '#2A1F14' }]}>
+              <IconButton icon="crown-outline" iconColor={theme.colors.accent} size={20} style={{ margin: 0 }} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>Subscription</Text>
+              <Text style={[styles.sectionTag, { color: theme.colors.accent }]}>
+                {subLoading ? 'Loading…' : (PLAN_NAMES[activePlan] ?? 'Free')} Plan
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.aboutItems}>
+            <View style={styles.aboutItem}>
+              <Text style={styles.aboutLabel}>Current Plan</Text>
+              <Text style={[styles.aboutValue, activePlan !== 'free' && { color: theme.colors.accent }]}>
+                {PLAN_NAMES[activePlan] ?? 'Free'}
+              </Text>
+            </View>
+            <View style={styles.aboutDivider} />
+            <View style={styles.aboutItem}>
+              <Text style={styles.aboutLabel}>Project Limit</Text>
+              <Text style={styles.aboutValue}>
+                {projectLimit === Infinity ? 'Unlimited' : `${projectLimit} projects`}
+              </Text>
+            </View>
+          </View>
+
+          {activePlan === 'free' ? (
+            <Pressable
+              style={styles.upgradeButton}
+              onPress={() => router.push('/paywall')}
+            >
+              <IconButton icon="crown-outline" iconColor="#080808" size={18} style={{ margin: 0 }} />
+              <Text style={styles.upgradeButtonText}>Upgrade Plan</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={styles.manageSubButton}
+              onPress={() => router.push('/paywall')}
+            >
+              <IconButton icon="arrow-up-circle-outline" iconColor={theme.colors.accent} size={18} style={{ margin: 0 }} />
+              <Text style={styles.manageSubText}>View Plans / Change Plan</Text>
+            </Pressable>
+          )}
         </Animated.View>
 
         {/* API Section — Admin only can edit */}
@@ -454,6 +505,39 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: 16,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.accent,
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 14,
+  },
+  upgradeButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#080808',
+    letterSpacing: 0.3,
+  },
+  manageSubButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.accentContainer,
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,124,0.25)',
+  },
+  manageSubText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.accent,
   },
   logoutButton: {
     flexDirection: 'row',
