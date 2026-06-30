@@ -16,6 +16,10 @@ export const useAppStore = create((set, get) => ({
   isLoading: false,
   aiApiKey: DEFAULT_AI_KEY,
   overallCategoryBreakdown: [],
+  // Last project limit passed to loadProjects so internal callers (createProject,
+  // updateProject, deleteProject) can reload with the same limit without needing
+  // the subscription context.
+  _projectLimit: Infinity,
   // A project-level lock so rapid transaction saves (e.g. user tapping
   // multiple categories or concurrent share-intent processing) never race.
   _txnLocks: new Map(),
@@ -58,10 +62,15 @@ export const useAppStore = create((set, get) => ({
 
   // === PROJECTS ===
 
-  loadProjects: async () => {
+  loadProjects: async (projectLimit) => {
     // Guard: don't query if not authenticated
     if (!useAuthStore.getState().session) return;
-    set({ isLoading: true });
+
+    // Remember the limit so internal reload callers (createProject, etc.) can
+    // use the same value without needing the subscription context.
+    const limit = projectLimit ?? get()._projectLimit;
+    set({ isLoading: true, _projectLimit: limit });
+
     try {
       // Fetch projects — RLS ensures users only see assigned projects, admins see all
       const { data: projects, error } = await supabase
@@ -96,7 +105,35 @@ export const useAppStore = create((set, get) => ({
         return new Date(bTime) - new Date(aTime);
       });
 
-      set({ projects: projectsWithLastMessage, isLoading: false });
+      // ── Server-authoritative lock status ────────────────────────────────
+      // Call the Supabase RPC get_project_lock_status() — no client-supplied
+      // limit. The RPC reads from user_entitlements (written exclusively by
+      // the revenuecat-webhook Edge Function) and ranks projects server-side.
+      // Falls back to client-side index-based locking only when the migration
+      // has not been applied yet (e.g. local dev before supabase db push).
+      let lockMap = {};
+      try {
+        const { data: lockRows, error: lockError } = await supabase.rpc('get_project_lock_status');
+        if (!lockError && lockRows) {
+          for (const row of lockRows) {
+            lockMap[row.id] = row.locked;
+          }
+        } else if (lockError) {
+          console.warn('[loadProjects] RPC unavailable, using client-side lock fallback:', lockError.message);
+        }
+      } catch (rpcErr) {
+        console.warn('[loadProjects] RPC error, using client-side lock fallback:', rpcErr);
+      }
+
+      // Apply lock status: use server result when available; otherwise fall
+      // back to index position against the client-side plan limit.
+      const useFallback = Object.keys(lockMap).length === 0;
+      const finalProjects = projectsWithLastMessage.map((p, i) => ({
+        ...p,
+        locked: useFallback ? (limit !== Infinity && i >= limit) : (lockMap[p.id] ?? false),
+      }));
+
+      set({ projects: finalProjects, isLoading: false });
     } catch (error) {
       console.error('Failed to load projects:', error);
       set({ isLoading: false });
@@ -166,6 +203,39 @@ export const useAppStore = create((set, get) => ({
     // Guard against a malformed route param (NaN) reaching the query layer.
     if (id === null || id === undefined || Number.isNaN(Number(id))) {
       throw new Error('Invalid project id');
+    }
+
+    // ── Server-side lock check (data-access boundary) ────────────────────
+    // Call is_project_locked() before loading any project data. This ensures
+    // deep-link and direct-navigation paths cannot bypass the lock even if the
+    // in-memory projects list is empty or stale. The RPC reads from the
+    // server-owned user_entitlements table — the client cannot influence the result.
+    //
+    // Fail-closed in production: if the RPC call fails for any reason other
+    // than the function not existing yet (PGRST202 = unknown function), we treat
+    // the project as locked to prevent data leakage under misconfiguration.
+    try {
+      const { data: locked, error: lockErr } = await supabase.rpc('is_project_locked', {
+        p_project_id: Number(id),
+      });
+      if (lockErr) {
+        // PGRST202: function does not exist (migration not yet applied — dev env)
+        const notDeployed = lockErr.code === 'PGRST202' || lockErr.message?.includes('does not exist');
+        if (notDeployed) {
+          console.warn('[loadProject] is_project_locked RPC not deployed yet, skipping lock check');
+        } else {
+          // Any other server error → fail closed in production
+          console.error('[loadProject] Lock check failed, blocking project access:', lockErr.message);
+          throw new Error('PROJECT_LOCKED');
+        }
+      } else if (locked === true) {
+        throw new Error('PROJECT_LOCKED');
+      }
+    } catch (e) {
+      if (e?.message === 'PROJECT_LOCKED') throw e;
+      // Unexpected JS error — fail closed
+      console.error('[loadProject] Unexpected lock check error, blocking:', e?.message);
+      throw new Error('PROJECT_LOCKED');
     }
 
     // Fetch project

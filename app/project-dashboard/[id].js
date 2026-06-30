@@ -34,12 +34,17 @@ export default function ProjectDashboardScreen() {
   const {
     currentProject,
     messages,
+    projects,
     loadProject,
     updateProject,
     deleteProject,
     updateTransaction,
     deleteTransaction,
   } = useAppStore();
+
+  // Check if this specific project is locked (subscription lapsed / over limit).
+  // The lock flag is set server-side via loadProjects → get_project_lock_status RPC.
+  const isLocked = projects.find((p) => p.id === projectId)?.locked ?? false;
 
   // ── Project edit state ──────────────────────────────────────────────
   const [showEdit, setShowEdit] = useState(false);
@@ -64,6 +69,10 @@ export default function ProjectDashboardScreen() {
       setLoadError(null);
       Promise.resolve(loadProject(projectId)).catch((e) => {
         if (!active) return;
+        // PROJECT_LOCKED is a sentinel thrown by loadProject when the
+        // server-side is_project_locked() RPC returns true. We store it as
+        // the loadError so the lock-wall branch below picks it up even when
+        // arriving via deep link (projects list may not be loaded yet).
         console.error('Failed to load project:', e);
         setLoadError(e?.message || 'Could not load this project.');
       });
@@ -258,7 +267,42 @@ export default function ProjectDashboardScreen() {
     );
   };
 
-  // ── Error screen ────────────────────────────────────────────────────
+  // ── Lock guard ───────────────────────────────────────────────────────
+  // Show the lock wall when:
+  //  a) The store projects list already marks this project as locked, OR
+  //  b) loadProject threw PROJECT_LOCKED (server-side is_project_locked RPC)
+  //     which covers direct deep-link navigation before the list is loaded.
+  if (isLocked || loadError === 'PROJECT_LOCKED') {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 28, paddingTop: insets.top + 40 }]}>
+        <Pressable
+          style={{ position: 'absolute', top: insets.top + 12, left: 16 }}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+        >
+          <IconButton icon="arrow-left" iconColor={theme.colors.onSurface} size={22} style={{ margin: 0 }} />
+        </Pressable>
+        <View style={{ width: 72, height: 72, borderRadius: 24, backgroundColor: 'rgba(201,168,124,0.12)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+          <IconButton icon="lock-outline" iconColor="#C9A87C" size={36} style={{ margin: 0 }} />
+        </View>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: theme.colors.onSurface, marginBottom: 8, textAlign: 'center' }}>
+          Project locked
+        </Text>
+        <Text style={{ fontSize: 14, color: theme.colors.secondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 }}>
+          This project is beyond your current plan's limit.{'\n'}Upgrade to access it again.
+        </Text>
+        <Pressable
+          style={{ backgroundColor: '#C9A87C', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 36, marginBottom: 12 }}
+          onPress={() => router.push('/paywall')}
+        >
+          <Text style={{ color: '#080808', fontWeight: '700', fontSize: 15 }}>Upgrade Plan</Text>
+        </Pressable>
+        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
+          <Text style={{ color: theme.colors.secondary, fontSize: 14, fontWeight: '600' }}>Back to projects</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (loadError && !currentProject) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 28, paddingTop: insets.top + 40 }]}>

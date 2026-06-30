@@ -51,7 +51,7 @@ const logoStyles = StyleSheet.create({
 });
 
 // ---- Animated Project Card ----
-function ProjectCard({ item, index, onPress }) {
+function ProjectCard({ item, index, onPress, locked = false }) {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -66,41 +66,54 @@ function ProjectCard({ item, index, onPress }) {
 
   return (
     <Animated.View entering={FadeInDown.delay(Math.min(index * 50, 200)).duration(260)}>
-      <Animated.View style={animatedStyle}>
+      <Animated.View style={[animatedStyle, locked && styles.projectCardLockedWrapper]}>
       <Pressable
-        style={styles.projectCard}
+        style={[styles.projectCard, locked && styles.projectCardLocked]}
         onPressIn={() => { scale.value = withSpring(0.975, { damping: 15, stiffness: 300 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 300 }); }}
         onPress={() => onPress(item.id)}
       >
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{getInitials(item.client_name)}</Text>
+        <View style={[styles.avatar, locked && styles.avatarLocked]}>
+          <Text style={[styles.avatarText, locked && styles.avatarTextLocked]}>{getInitials(item.client_name)}</Text>
         </View>
         <View style={styles.projectInfo}>
           <View style={styles.projectHeader}>
-            <Text style={styles.clientName} numberOfLines={1}>{item.client_name}</Text>
-            <Text style={styles.timeText}>{getTimeString(item.last_message_time)}</Text>
+            <Text style={[styles.clientName, locked && styles.textLocked]} numberOfLines={1}>{item.client_name}</Text>
+            {locked ? (
+              <View style={styles.lockedBadge}>
+                <Text style={styles.lockedBadgeText}>🔒 Upgrade to access</Text>
+              </View>
+            ) : (
+              <Text style={styles.timeText}>{getTimeString(item.last_message_time)}</Text>
+            )}
           </View>
-          <Text style={styles.projectTitle} numberOfLines={1}>{item.project_name}</Text>
+          <Text style={[styles.projectTitle, locked && styles.textLocked]} numberOfLines={1}>{item.project_name}</Text>
           <View style={styles.projectFooter}>
-            <Text style={styles.lastMessage} numberOfLines={1}>
-              {item.last_message || 'No messages yet'}
+            <Text style={[styles.lastMessage, locked && styles.textLocked]} numberOfLines={1}>
+              {locked ? 'Subscription required to access this project' : (item.last_message || 'No messages yet')}
             </Text>
-            <View
-              style={[
-                styles.balanceBadge,
-                { backgroundColor: balance >= 0 ? theme.colors.incomingMuted : theme.colors.expenseMuted },
-              ]}
-            >
-              <Text
-                style={[styles.balanceTextSmall, { color: balance >= 0 ? theme.colors.incoming : theme.colors.expense }]}
+            {!locked && (
+              <View
+                style={[
+                  styles.balanceBadge,
+                  { backgroundColor: balance >= 0 ? theme.colors.incomingMuted : theme.colors.expenseMuted },
+                ]}
               >
-                {formatRupees(Math.abs(balance))}
-              </Text>
-            </View>
+                <Text
+                  style={[styles.balanceTextSmall, { color: balance >= 0 ? theme.colors.incoming : theme.colors.expense }]}
+                >
+                  {formatRupees(Math.abs(balance))}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
-        <IconButton icon="chevron-right" iconColor={theme.colors.secondary} size={18} style={{ margin: 0, marginLeft: 4 }} />
+        <IconButton
+          icon={locked ? "crown-outline" : "chevron-right"}
+          iconColor={locked ? "#C9A87C" : theme.colors.secondary}
+          size={18}
+          style={{ margin: 0, marginLeft: 4 }}
+        />
       </Pressable>
       </Animated.View>
     </Animated.View>
@@ -177,6 +190,7 @@ export default function HomeScreen() {
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const { projectLimit, activePlan } = useSubscription();
   const atProjectLimit = projects.length >= projectLimit;
+
   const [showNewProject, setShowNewProject] = useState(false);
   const [showRecentClients, setShowRecentClients] = useState(false);
   const [clientName, setClientName] = useState('');
@@ -200,19 +214,21 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadProjects();
-    }, [])
+      loadProjects(projectLimit);
+    }, [projectLimit])
   );
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    try { await loadProjects(); } catch (e) { console.error(e); }
+    try { await loadProjects(projectLimit); } catch (e) { console.error(e); }
     finally { setIsRefreshing(false); }
-  }, []);
+  }, [projectLimit]);
 
+  // Only non-locked projects appear in Recents so users cannot bypass the lock
+  // via the recent-clients shortcut.
   const recentClients = useMemo(() => {
     return [...projects]
-      .filter((p) => p.last_message_time)
+      .filter((p) => p.last_message_time && !p.locked)
       .sort((a, b) => new Date(b.last_message_time) - new Date(a.last_message_time))
       .slice(0, 3);
   }, [projects]);
@@ -356,10 +372,14 @@ export default function HomeScreen() {
   );
 
   // ---- Projects Section Header ----
+  const lockedCount = projects.filter((p) => p.locked).length;
   const ProjectsHeader = () => (
     projects.length > 0 ? (
       <Animated.View entering={FadeIn.delay(300)} style={styles.sectionHeader}>
-        <Text style={styles.sectionLabel}>YOUR PROJECTS ({projects.length})</Text>
+        <Text style={styles.sectionLabel}>
+          YOUR PROJECTS ({projects.length}
+          {lockedCount > 0 ? ` · ${lockedCount} locked` : ''})
+        </Text>
       </Animated.View>
     ) : null
   );
@@ -378,7 +398,18 @@ export default function HomeScreen() {
       <FlatList
         data={projects}
         renderItem={({ item, index }) => (
-          <ProjectCard item={item} index={index} onPress={(id) => router.push(`/project-dashboard/${id}`)} />
+          <ProjectCard
+            item={item}
+            index={index}
+            locked={item.locked}
+            onPress={(id) => {
+              if (item.locked) {
+                router.push('/paywall');
+              } else {
+                router.push(`/project-dashboard/${id}`);
+              }
+            }}
+          />
         )}
         keyExtractor={(item) => item.id.toString()}
         ListHeaderComponent={ListHeader}
@@ -768,6 +799,39 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: theme.colors.outline,
+  },
+  projectCardLocked: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.outline,
+    borderStyle: 'dashed',
+  },
+  projectCardLockedWrapper: {
+    opacity: 0.72,
+  },
+  avatarLocked: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.outline,
+  },
+  avatarTextLocked: {
+    color: theme.colors.secondary,
+  },
+  textLocked: {
+    color: theme.colors.secondary,
+  },
+  lockedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(201,168,124,0.12)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  lockedBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#C9A87C',
+    letterSpacing: 0.2,
   },
   avatar: {
     width: 44,
