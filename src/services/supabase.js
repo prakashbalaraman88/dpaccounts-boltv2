@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
+import { AppState } from 'react-native';
 
 // ============================================
 // SUPABASE CONFIG - Update these with your values
@@ -17,6 +18,19 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     detectSessionInUrl: false,
   },
+});
+
+// Supabase's JS timer-based auto-refresh can be paused by the OS when the app
+// is backgrounded. Re-start it the moment the app returns to the foreground so
+// that an overnight (or longer) background session is refreshed immediately
+// rather than on the next API call. Stop it in the background to avoid waking
+// the JS thread unnecessarily.
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
 });
 
 // Helper to check if Supabase is configured

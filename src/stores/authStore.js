@@ -11,6 +11,11 @@ import {
 } from '../services/auth';
 import { identifyRevenueCatUser, logoutRevenueCatUser } from '../services/revenuecat';
 
+// Module-level reference to the active auth state subscription.
+// Stored outside the store so it survives store re-renders and can be
+// cleaned up if initialize() is called more than once (e.g. after a crash).
+let _authUnsubscribe = null;
+
 export const useAuthStore = create((set, get) => ({
   // State
   session: null,
@@ -65,8 +70,16 @@ export const useAuthStore = create((set, get) => ({
         set({ session: null, user: null, profile: null, isAdmin: false, isLoading: false, profileError: null });
       }
 
+      // Tear down any existing listener before re-subscribing so that calling
+      // initialize() more than once (e.g. after a crash recovery) never stacks
+      // up duplicate listeners.
+      if (_authUnsubscribe) {
+        _authUnsubscribe();
+        _authUnsubscribe = null;
+      }
+
       // Listen for auth changes (token refresh, sign-out, OAuth callback)
-      onAuthStateChange(async (event, session) => {
+      _authUnsubscribe = onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
           set({ session: null, user: null, profile: null, isAdmin: false });
           logoutRevenueCatUser();
