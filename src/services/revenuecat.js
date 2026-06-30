@@ -9,7 +9,7 @@
  * Free tier: 1 project (no subscription required)
  */
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Purchases from 'react-native-purchases';
@@ -160,6 +160,11 @@ function useSubscriptionContext() {
   const [isRestoring, setIsRestoring]   = useState(false);
   const [revCatReady, setRevCatReady]   = useState(_initialized);
 
+  // Tracks whether we have ever received customerInfo (from cache or network).
+  // Used to implement stale-while-revalidate: background refreshes skip the
+  // loading state so the badge never flashes 'Loading…' after the first load.
+  const hasCustomerInfoRef = useRef(false);
+
   const persistCustomerInfo = useCallback(async (info) => {
     if (!info) return;
     try {
@@ -170,6 +175,7 @@ function useSubscriptionContext() {
   }, []);
 
   const setAndPersistCustomerInfo = useCallback((info) => {
+    hasCustomerInfoRef.current = true;
     setCustomerInfo(info);
     persistCustomerInfo(info);
   }, [persistCustomerInfo]);
@@ -179,7 +185,11 @@ function useSubscriptionContext() {
       setIsLoading(false);
       return null;
     }
-    setIsLoading(true);
+    // Only show the loading state when we have no data yet (first load).
+    // Subsequent background refreshes run silently so the badge stays stable.
+    if (!hasCustomerInfoRef.current) {
+      setIsLoading(true);
+    }
     try {
       const [info, offers] = await Promise.all([
         Purchases.getCustomerInfo(),
@@ -209,7 +219,9 @@ function useSubscriptionContext() {
       .then((raw) => {
         if (raw) {
           try {
-            setCustomerInfo(JSON.parse(raw));
+            const cached = JSON.parse(raw);
+            hasCustomerInfoRef.current = true;
+            setCustomerInfo(cached);
           } catch {
             // Ignore malformed cache
           }
