@@ -1,5 +1,6 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
 /**
@@ -46,6 +47,23 @@ export async function signIn(email, password) {
  * Returns session data on success, or null if the user cancelled.
  */
 export async function signInWithGoogle() {
+  // ── Web: full-page redirect flow ────────────────────────────────────────
+  // On web, AuthSession.makeRedirectUri generates http://localhost:5000 which
+  // is unreachable through Replit's proxy. Instead we use the actual browser
+  // origin and let Supabase redirect back to /auth/callback, where the code
+  // exchange is handled by app/auth/callback.js.
+  if (Platform.OS === 'web') {
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
+    if (error) throw error;
+    // Browser will navigate away — this function does not return on success.
+    return null;
+  }
+
+  // ── Native: PKCE popup flow ──────────────────────────────────────────────
   const redirectUri = AuthSession.makeRedirectUri({
     scheme: 'interiorbooks',
     path: 'auth/callback',
@@ -73,8 +91,6 @@ export async function signInWithGoogle() {
   }
 
   // Check if the callback URL contains an OAuth error before trying to exchange.
-  // The most common case is redirect_uri_mismatch when Google Cloud Console is
-  // missing the Supabase callback URL in Authorized Redirect URIs.
   const callbackUrl = new URL(result.url);
   const oauthError = callbackUrl.searchParams.get('error');
   const oauthErrorDesc = callbackUrl.searchParams.get('error_description');
